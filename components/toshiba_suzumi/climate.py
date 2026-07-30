@@ -53,7 +53,7 @@ DISABLE_HEAT_MODE = "disable_heat_mode"
 DISABLE_WIFI_LED = "disable_wifi_led"
 
 toshiba_ns = cg.esphome_ns.namespace("toshiba_suzumi")
-ToshibaClimateUart = toshiba_ns.class_("ToshibaClimateUart", cg.PollingComponent, climate.Climate, uart.UARTDevice)
+ToshibaClimateUart = toshiba_ns.class_("ToshibaDiagnosticMonitorUart", cg.PollingComponent, climate.Climate, uart.UARTDevice)
 ToshibaPwrModeSelect = toshiba_ns.class_('ToshibaPwrModeSelect', select.Select)
 ToshibaSpecialModeSelect = toshiba_ns.class_('ToshibaSpecialModeSelect', select.Select)
 ToshibaVerticalAirDirectionSelect = toshiba_ns.class_('ToshibaVerticalAirDirectionSelect', select.Select)
