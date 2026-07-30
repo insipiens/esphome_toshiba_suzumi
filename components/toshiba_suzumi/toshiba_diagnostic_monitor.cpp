@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "toshiba_climate.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
