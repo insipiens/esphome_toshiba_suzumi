@@ -106,7 +106,7 @@ The matching connector is JST PA2.0 ([Aliexpress](https://www.aliexpress.com/ite
 external_components:
   - source: 
       type: git
-      url: https://github.com/YOUR_GITHUB_USERNAME/esphome_toshiba_suzumi
+      url: https://github.com/insipiens/esphome_toshiba_suzumi
     components: [toshiba_suzumi]
 
 uart:
@@ -332,5 +332,3 @@ https://www.espressif.com/en/products/devkits/esp32-devkitc/
 https://github.com/toremick/shorai-esp32
 
 https://github.com/Vpowgh/TConnect
-
-Discord channel: https://discord.gg/wYYFawvqfr
