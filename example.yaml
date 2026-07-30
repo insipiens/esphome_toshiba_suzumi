@@ -69,17 +69,22 @@ climate:
     #idu_fan_speed:
     #  name: "IDU Fan Speed"
 
-# Optional diagnostic button. The scan is paced and temporarily pauses normal polling.
-button:
+# Optional read-only focused diagnostic monitor. Normal polling pauses while enabled.
+switch:
   - platform: template
-    name: "Scan Toshiba registers"
-    icon: "mdi:reload"
-    on_press:
-      then:
-         # id(living_room) is the id of the climate component above
-        - lambda: |-
-            auto* controller = static_cast<toshiba_suzumi::ToshibaClimateUart*>(id(living_room));
-            controller->scan();
+    name: "Toshiba focused monitor"
+    icon: "mdi:chart-timeline-variant"
+    optimistic: true
+    restore_mode: ALWAYS_OFF
+    turn_on_action:
+      - lambda: |-
+          # id(living_room) is the id of the climate component above
+          auto* controller = static_cast<toshiba_suzumi::ToshibaClimateUart*>(id(living_room));
+          controller->set_scan_enabled(true);
+    turn_off_action:
+      - lambda: |-
+          auto* controller = static_cast<toshiba_suzumi::ToshibaClimateUart*>(id(living_room));
+          controller->set_scan_enabled(false);
 
 # Enable Home Assistant API
 api:
