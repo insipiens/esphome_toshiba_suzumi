@@ -184,16 +184,19 @@ class ToshibaDiagnosticMonitorUart : public ToshibaClimateUart {
 
  private:
   bool monitor_stop_requested_ = false;
+  bool monitor_waiting_for_cycle_ = false;
   uint8_t monitor_register_index_ = 0;
+  uint32_t monitor_cycle_started_ = 0;
   uint32_t monitor_requests_ = 0;
   uint32_t monitor_matched_ = 0;
   uint32_t monitor_timeouts_ = 0;
+  uint32_t monitor_unrelated_ = 0;
   uint32_t monitor_cycles_completed_ = 0;
 
   void send_monitor_request_();
   void complete_monitor_request_();
   void finish_monitor_();
-  void log_monitor_bytes_(const std::vector<uint8_t> &raw_data) const;
+  void log_monitor_bytes_(const std::vector<uint8_t> &raw_data, int16_t response_register) const;
   void log_monitor_decoded_(const std::vector<uint8_t> &raw_data, int16_t response_register) const;
 };
 
