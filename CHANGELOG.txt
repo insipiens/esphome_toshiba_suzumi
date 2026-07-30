@@ -1,6 +1,8 @@
 ***
 Jul 30th 2026
 
+* replaced the one-shot full register scanner with a toggle-controlled, continuous read-only monitor for registers `0xCA`, `0xEE`, and `0xE5`
+* added focused header/raw/decoded logging and clean stop/resume behavior; normal entities are refreshed when monitoring stops
 * renamed diagnostic YAML options and internal identifiers to consistent IDU/ODU terminology; old aliases are not retained
 * renamed `cdu_load` to `compressor_load`, `cdu_iac` to `compressor_current`, and the remaining `cdu_*` / `fcu_*` diagnostic keys to descriptive `odu_*` / `idu_*` names
 * corrected compressor current scaling to 0.1 A per protocol count
