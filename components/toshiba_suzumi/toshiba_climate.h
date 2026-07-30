@@ -174,6 +174,7 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
 
 class ToshibaDiagnosticMonitorUart : public ToshibaClimateUart {
  public:
+  void loop() override;
   void scan() override { this->set_scan_enabled(true); }
   void set_scan_enabled(bool enabled) override;
   bool is_scan_enabled() const override { return this->scan_active_ && !this->monitor_stop_requested_; }
@@ -185,19 +186,63 @@ class ToshibaDiagnosticMonitorUart : public ToshibaClimateUart {
  private:
   bool monitor_stop_requested_ = false;
   bool monitor_waiting_for_cycle_ = false;
+  bool monitor_b7_retry_pending_ = false;
+  bool monitor_b7_retry_active_ = false;
   uint8_t monitor_register_index_ = 0;
   uint32_t monitor_cycle_started_ = 0;
+  uint32_t monitor_cycle_number_ = 0;
   uint32_t monitor_requests_ = 0;
+  uint32_t monitor_registers_attempted_ = 0;
   uint32_t monitor_matched_ = 0;
   uint32_t monitor_timeouts_ = 0;
   uint32_t monitor_unrelated_ = 0;
   uint32_t monitor_cycles_completed_ = 0;
+  uint32_t monitor_b7_first_timeouts_ = 0;
+  uint32_t monitor_b7_retries_ = 0;
+  uint32_t monitor_b7_retry_matches_ = 0;
+  uint32_t monitor_b7_retry_timeouts_ = 0;
 
+  uint32_t monitor_cycle_attempted_ = 0;
+  uint32_t monitor_cycle_matched_ = 0;
+  uint32_t monitor_cycle_timeouts_ = 0;
+  uint32_t monitor_cycle_requests_ = 0;
+  uint32_t monitor_cycle_unrelated_ = 0;
+  uint32_t monitor_cycle_unrelated_repeated_ = 0;
+  uint32_t monitor_cycle_unrelated_changed_ = 0;
+
+  std::vector<uint8_t> monitor_b7_partial_;
+  std::vector<uint8_t> monitor_last_unrelated_packet_;
+
+  bool monitor_power_valid_ = false;
+  uint8_t monitor_power_ = 0;
+  bool monitor_limit_valid_ = false;
+  uint8_t monitor_limit_ = 0;
+  bool monitor_room_valid_ = false;
+  uint8_t monitor_room_ = 0;
+  bool monitor_outdoor_valid_ = false;
+  uint8_t monitor_outdoor_ = 0;
+  bool monitor_f8_valid_ = false;
+  uint8_t monitor_f8_[4] = {0};
+  bool monitor_e4_valid_ = false;
+  uint8_t monitor_e4_[3] = {0};
+  bool monitor_e5_valid_ = false;
+  uint8_t monitor_e5_[8] = {0};
+
+  bool monitor_da_previous_valid_ = false;
+  uint32_t monitor_da_previous_wh_ = 0;
+  uint32_t monitor_da_previous_ms_ = 0;
+
+  void start_monitor_cycle_(uint32_t now);
+  void reset_monitor_cycle_state_();
   void send_monitor_request_();
+  void handle_monitor_timeout_();
   void complete_monitor_request_();
   void finish_monitor_();
+  void capture_monitor_control_(const std::vector<uint8_t> &raw_data, int16_t response_register);
+  void log_monitor_cycle_summary_() const;
   void log_monitor_bytes_(const std::vector<uint8_t> &raw_data, int16_t response_register) const;
-  void log_monitor_decoded_(const std::vector<uint8_t> &raw_data, int16_t response_register) const;
+  void log_monitor_da_(const std::vector<uint8_t> &raw_data);
+  void log_monitor_b7_partial_() const;
 };
 
 class ToshibaPwrModeSelect : public select::Select, public esphome::Parented<ToshibaClimateUart> {
