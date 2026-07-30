@@ -49,7 +49,13 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   void loop() override;
   void dump_config() override;
   void update() override;
-  void scan();
+  virtual void scan();
+  virtual void set_scan_enabled(bool enabled) {
+    if (enabled) {
+      this->scan();
+    }
+  }
+  virtual bool is_scan_enabled() const { return this->scan_active_; }
   void set_wifi_led(bool enabled);
   float get_setup_priority() const override { return setup_priority::LATE; }
 
@@ -85,7 +91,6 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   /// Return the traits of this controller.
   climate::ClimateTraits traits() override;
 
- private:
   std::vector<uint8_t> rx_message_;
   std::vector<ToshibaCommand> command_queue_;
   uint32_t last_command_timestamp_ = 0;
@@ -149,11 +154,11 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   void on_set_vertical_air_direction(const std::string &value);
   void publish_vertical_air_direction_(SWING swing_mode);
   void configure_supported_custom_modes_();
-  void process_scan_();
+  virtual void process_scan_();
   void send_scan_request_();
   void complete_scan_register_();
   void finish_scan_();
-  void log_scan_packet_(const std::vector<uint8_t> &raw_data);
+  virtual void log_scan_packet_(const std::vector<uint8_t> &raw_data);
   int16_t extract_response_register_(const std::vector<uint8_t> &raw_data) const;
   void log_scan_ascii_(const std::vector<uint8_t> &raw_data) const;
 #ifdef USE_TIME
@@ -165,6 +170,31 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
 
   friend class ToshibaPwrModeSelect;
   friend class ToshibaVerticalAirDirectionSelect;
+};
+
+class ToshibaDiagnosticMonitorUart : public ToshibaClimateUart {
+ public:
+  void scan() override { this->set_scan_enabled(true); }
+  void set_scan_enabled(bool enabled) override;
+  bool is_scan_enabled() const override { return this->scan_active_ && !this->monitor_stop_requested_; }
+
+ protected:
+  void process_scan_() override;
+  void log_scan_packet_(const std::vector<uint8_t> &raw_data) override;
+
+ private:
+  bool monitor_stop_requested_ = false;
+  uint8_t monitor_register_index_ = 0;
+  uint32_t monitor_requests_ = 0;
+  uint32_t monitor_matched_ = 0;
+  uint32_t monitor_timeouts_ = 0;
+  uint32_t monitor_cycles_completed_ = 0;
+
+  void send_monitor_request_();
+  void complete_monitor_request_();
+  void finish_monitor_();
+  void log_monitor_bytes_(const std::vector<uint8_t> &raw_data) const;
+  void log_monitor_decoded_(const std::vector<uint8_t> &raw_data, int16_t response_register) const;
 };
 
 class ToshibaPwrModeSelect : public select::Select, public esphome::Parented<ToshibaClimateUart> {
