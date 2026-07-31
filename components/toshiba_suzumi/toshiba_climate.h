@@ -15,9 +15,7 @@ class RealTimeClock;
 namespace toshiba_suzumi {
 
 static const char *const TAG = "ToshibaClimateUart";
-// default max temp for units
 static const uint8_t MAX_TEMP = 30;
-// default min temp for units without 8° heating mode
 static const uint8_t MIN_TEMP_STANDARD = 17;
 static const uint8_t SPECIAL_TEMP_OFFSET = 16;
 static const uint8_t SPECIAL_MODE_EIGHT_DEG_MIN_TEMP = 5;
@@ -26,7 +24,7 @@ static const uint8_t SPECIAL_MODE_EIGHT_DEG_DEF_TEMP = 8;
 static const uint8_t NORMAL_MODE_DEF_TEMP = 20;
 
 static const std::vector<uint8_t> HANDSHAKE[6] = {
-    {2, 255, 255, 0, 0, 0, 0, 2},       {2, 255, 255, 1, 0, 0, 1, 2, 254}, {2, 0, 0, 0, 0, 0, 2, 2, 2, 250},
+    {2, 255, 255, 0, 0, 0, 0, 2},       {2, 255, 255, 1, 0, 0, 1, 2, 254}, {2, 0, 0, 0, 0, 2, 2, 2, 250},
     {2, 0, 1, 129, 1, 0, 2, 0, 0, 123}, {2, 0, 1, 2, 0, 0, 2, 0, 0, 254},  {2, 0, 2, 0, 0, 0, 0, 254},
 };
 
@@ -51,16 +49,14 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   void update() override;
   virtual void scan();
   virtual void set_scan_enabled(bool enabled) {
-    if (enabled) {
-      this->scan();
-    }
+    if (enabled) this->scan();
   }
   virtual bool is_scan_enabled() const { return this->scan_active_; }
   void set_wifi_led(bool enabled);
   float get_setup_priority() const override { return setup_priority::LATE; }
 
-  void set_indoor_temp_sensor(sensor::Sensor *indoor_temp_sensor) { indoor_temp_sensor_ = indoor_temp_sensor; }
-  void set_outdoor_temp_sensor(sensor::Sensor *outdoor_temp_sensor) { outdoor_temp_sensor_ = outdoor_temp_sensor; }
+  void set_indoor_temp_sensor(sensor::Sensor *sensor) { indoor_temp_sensor_ = sensor; }
+  void set_outdoor_temp_sensor(sensor::Sensor *sensor) { outdoor_temp_sensor_ = sensor; }
   void set_odu_discharge_temp_sensor(sensor::Sensor *sensor) { odu_discharge_temp_sensor_ = sensor; }
   void set_odu_suction_temp_sensor(sensor::Sensor *sensor) { odu_suction_temp_sensor_ = sensor; }
   void set_odu_heat_exchanger_temp_sensor(sensor::Sensor *sensor) { odu_heat_exchanger_temp_sensor_ = sensor; }
@@ -72,11 +68,9 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   void set_time(time::RealTimeClock *time) { time_ = time; }
   void set_energy_sensor(sensor::Sensor *sensor) { energy_sensor_ = sensor; }
   void set_power_sensor(sensor::Sensor *sensor) { power_sensor_ = sensor; }
-  void set_pwr_select(select::Select *pws_select) { pwr_select_ = pws_select; }
-  void set_vertical_air_direction_select(select::Select *vertical_air_direction_select) {
-    vertical_air_direction_select_ = vertical_air_direction_select;
-  }
-  void set_self_clean_sensor(binary_sensor::BinarySensor *self_clean_sensor) { self_clean_sensor_ = self_clean_sensor; }
+  void set_pwr_select(select::Select *select) { pwr_select_ = select; }
+  void set_vertical_air_direction_select(select::Select *select) { vertical_air_direction_select_ = select; }
+  void set_self_clean_sensor(binary_sensor::BinarySensor *sensor) { self_clean_sensor_ = sensor; }
   void set_horizontal_swing(bool enabled) { horizontal_swing_ = enabled; }
   void disable_heat_mode(bool disabled) { heat_mode_disabled_ = disabled; }
   void disable_wifi_led(bool disabled) { wifi_led_disabled_ = disabled; }
@@ -85,10 +79,7 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   void set_time_sync_interval(uint32_t interval) { time_sync_interval_ = interval; }
 
  protected:
-  /// Override control to change settings of the climate device.
   void control(const climate::ClimateCall &call) override;
-
-  /// Return the traits of this controller.
   climate::ClimateTraits traits() override;
 
   std::vector<uint8_t> rx_message_;
@@ -96,7 +87,6 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   uint32_t last_command_timestamp_ = 0;
   uint32_t last_rx_char_timestamp_ = 0;
   STATE power_state_ = STATE::OFF;
-  // True while the unit is running its post-shutdown self-cleaning cycle.
   bool self_clean_running_ = false;
   optional<SPECIAL_MODE> special_mode_ = SPECIAL_MODE::STANDARD;
   select::Select *pwr_select_ = nullptr;
@@ -116,10 +106,10 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   sensor::Sensor *energy_sensor_ = nullptr;
   sensor::Sensor *power_sensor_ = nullptr;
   bool horizontal_swing_ = false;
-  uint8_t min_temp_ = 17; // default min temp for units without 8° heating mode
+  uint8_t min_temp_ = 17;
   bool heat_mode_disabled_ = false;
   bool wifi_led_disabled_ = false;
-  std::vector<const char*> supported_presets_;
+  std::vector<const char *> supported_presets_;
   uint32_t last_time_sync_ = 0;
   uint32_t last_energy_sync_ = 0;
   uint32_t last_total_daily_energy_ = 0;
@@ -175,9 +165,15 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
 class ToshibaDiagnosticMonitorUart : public ToshibaClimateUart {
  public:
   void loop() override;
+  void update() override;
   void scan() override { this->set_scan_enabled(true); }
   void set_scan_enabled(bool enabled) override;
   bool is_scan_enabled() const override { return this->scan_active_ && !this->monitor_stop_requested_; }
+
+  void set_f8_byte_1_sensor(sensor::Sensor *sensor) { f8_byte_sensors_[0] = sensor; }
+  void set_f8_byte_2_sensor(sensor::Sensor *sensor) { f8_byte_sensors_[1] = sensor; }
+  void set_f8_byte_3_sensor(sensor::Sensor *sensor) { f8_byte_sensors_[2] = sensor; }
+  void set_f8_byte_4_sensor(sensor::Sensor *sensor) { f8_byte_sensors_[3] = sensor; }
 
  protected:
   void process_scan_() override;
@@ -213,24 +209,16 @@ class ToshibaDiagnosticMonitorUart : public ToshibaClimateUart {
   std::vector<uint8_t> monitor_b7_partial_;
   std::vector<uint8_t> monitor_last_unrelated_packet_;
 
-  bool monitor_power_valid_ = false;
-  uint8_t monitor_power_ = 0;
-  bool monitor_limit_valid_ = false;
-  uint8_t monitor_limit_ = 0;
-  bool monitor_room_valid_ = false;
-  uint8_t monitor_room_ = 0;
-  bool monitor_outdoor_valid_ = false;
-  uint8_t monitor_outdoor_ = 0;
-  bool monitor_f8_valid_ = false;
-  uint8_t monitor_f8_[4] = {0};
-  bool monitor_e4_valid_ = false;
-  uint8_t monitor_e4_[3] = {0};
-  bool monitor_e5_valid_ = false;
-  uint8_t monitor_e5_[8] = {0};
+  sensor::Sensor *f8_byte_sensors_[4] = {nullptr, nullptr, nullptr, nullptr};
+  bool f8_poll_pending_ = false;
+  bool f8_request_sent_ = false;
+  uint32_t f8_request_started_ = 0;
+  std::vector<uint8_t> f8_rx_message_;
 
-  bool monitor_da_previous_valid_ = false;
-  uint32_t monitor_da_previous_wh_ = 0;
-  uint32_t monitor_da_previous_ms_ = 0;
+  bool has_f8_sensors_() const;
+  void begin_f8_request_();
+  bool handle_f8_rx_byte_(uint8_t byte);
+  void publish_f8_response_(const std::vector<uint8_t> &raw_data);
 
   void start_monitor_cycle_(uint32_t now);
   void reset_monitor_cycle_state_();
@@ -238,21 +226,18 @@ class ToshibaDiagnosticMonitorUart : public ToshibaClimateUart {
   void handle_monitor_timeout_();
   void complete_monitor_request_();
   void finish_monitor_();
-  void capture_monitor_control_(const std::vector<uint8_t> &raw_data, int16_t response_register);
   void log_monitor_cycle_summary_() const;
-  void log_monitor_bytes_(const std::vector<uint8_t> &raw_data, int16_t response_register) const;
-  void log_monitor_da_(const std::vector<uint8_t> &raw_data);
   void log_monitor_b7_partial_() const;
 };
 
 class ToshibaPwrModeSelect : public select::Select, public esphome::Parented<ToshibaClimateUart> {
  protected:
-  virtual void control(const std::string &value) override;
+  void control(const std::string &value) override;
 };
 
 class ToshibaVerticalAirDirectionSelect : public select::Select, public esphome::Parented<ToshibaClimateUart> {
  protected:
-  virtual void control(const std::string &value) override;
+  void control(const std::string &value) override;
 };
 
 }  // namespace toshiba_suzumi
