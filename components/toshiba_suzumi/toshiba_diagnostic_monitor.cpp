@@ -7,11 +7,10 @@
 namespace esphome {
 namespace toshiba_suzumi {
 
-static const uint8_t MONITOR_FIRST_REGISTER = 0x80;
-static const uint16_t MONITOR_REGISTER_COUNT = 128;
-static const uint32_t MONITOR_CYCLE_INTERVAL = 60000;
+static const uint8_t MONITOR_FIRST_REGISTER = 0x00;
+static const uint16_t MONITOR_REGISTER_COUNT = 256;
 static const uint32_t MONITOR_RESPONSE_TIMEOUT = 350;
-static const uint32_t MONITOR_QUIET_PERIOD = 20;
+static const uint32_t MONITOR_QUIET_PERIOD = 50;
 static const size_t MONITOR_LOG_CHUNK_BYTES = 24;
 
 static uint8_t monitor_checksum_(const std::vector<uint8_t> &data) {
@@ -25,8 +24,7 @@ static uint8_t monitor_checksum_(const std::vector<uint8_t> &data) {
 void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
   if (enabled) {
     if (this->scan_active_) {
-      this->monitor_stop_requested_ = false;
-      ESP_LOGI(TAG, "Full register monitor already running.");
+      ESP_LOGI(TAG, "One-shot register sweep already running.");
       return;
     }
 
@@ -45,12 +43,11 @@ void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
     this->monitor_cycles_completed_ = 0;
     this->scan_register_ = MONITOR_FIRST_REGISTER;
 
-    ESP_LOGI(TAG, "========== TOSHIBA FULL REGISTER MONITOR STARTED ==========");
-    ESP_LOGI(TAG, "range=0x80-0xFF registers=128 cadence=60s read_only=YES timeout=350ms");
-    ESP_LOGI(TAG, "Every successful register payload is logged on every cycle; delta filtering is disabled.");
-    ESP_LOGI(TAG, "Unsolicited packets are also logged in full.");
-    ESP_LOGI(TAG, "Normal polling paused until monitor is disabled.");
-    ESP_LOGI(TAG, "MONITOR cycle=1 started range=0x80-0xFF registers=128");
+    ESP_LOGI(TAG, "========== TOSHIBA ONE-SHOT REGISTER SWEEP STARTED ==========");
+    ESP_LOGI(TAG, "range=0x00-0xFF registers=256 repeat=NO read_only=YES timeout=350ms quiet=50ms");
+    ESP_LOGI(TAG, "Only the proven read envelope is transmitted; normal polling is paused.");
+    ESP_LOGI(TAG, "Every matched response and every unsolicited packet is logged in full.");
+    ESP_LOGI(TAG, "MONITOR cycle=1 started range=0x00-0xFF registers=256");
     return;
   }
 
@@ -59,7 +56,7 @@ void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
   }
 
   this->monitor_stop_requested_ = true;
-  ESP_LOGI(TAG, "Full register monitor stop requested; finishing current read.");
+  ESP_LOGI(TAG, "One-shot register sweep stop requested; finishing current read.");
   if (!this->scan_request_sent_) {
     this->finish_monitor_();
   }
@@ -75,18 +72,6 @@ void ToshibaDiagnosticMonitorUart::process_scan_() {
   if (this->monitor_stop_requested_ && !this->scan_request_sent_) {
     this->finish_monitor_();
     return;
-  }
-
-  if (this->monitor_waiting_for_cycle_) {
-    if (now - this->monitor_cycle_started_ < MONITOR_CYCLE_INTERVAL) {
-      return;
-    }
-
-    this->monitor_cycle_started_ = now;
-    this->monitor_register_index_ = 0;
-    this->monitor_waiting_for_cycle_ = false;
-    ESP_LOGI(TAG, "MONITOR cycle=%u started range=0x80-0xFF registers=128",
-             static_cast<unsigned>(this->monitor_cycles_completed_ + 1));
   }
 
   if (!this->scan_request_sent_) {
@@ -118,7 +103,7 @@ void ToshibaDiagnosticMonitorUart::process_scan_() {
 }
 
 void ToshibaDiagnosticMonitorUart::send_monitor_request_() {
-  // Proven read envelope only. Monitor mode never constructs a write frame.
+  // Proven read envelope only. This monitor never constructs a write frame.
   std::vector<uint8_t> payload = {2, 0, 3, 16, 0, 0, 6, 1, 48, 1, 0, 1};
   payload.push_back(this->scan_register_);
   payload.push_back(monitor_checksum_(payload));
@@ -132,9 +117,7 @@ void ToshibaDiagnosticMonitorUart::complete_monitor_request_() {
     this->monitor_matched_++;
   } else {
     this->monitor_timeouts_++;
-    ESP_LOGI(TAG, "MONITOR cycle=%u reg=0x%02X timeout",
-             static_cast<unsigned>(this->monitor_cycles_completed_ + 1),
-             static_cast<unsigned>(this->scan_register_));
+    ESP_LOGI(TAG, "MONITOR cycle=1 reg=0x%02X timeout", static_cast<unsigned>(this->scan_register_));
   }
 
   this->scan_request_sent_ = false;
@@ -144,17 +127,18 @@ void ToshibaDiagnosticMonitorUart::complete_monitor_request_() {
     return;
   }
 
-  if (this->monitor_register_index_ >= MONITOR_REGISTER_COUNT - 1) {
-    this->monitor_cycles_completed_++;
-    this->monitor_waiting_for_cycle_ = true;
-    ESP_LOGI(TAG, "MONITOR cycle=%u complete attempted=128 matched=%u timeouts=%u unsolicited=%u",
-             static_cast<unsigned>(this->monitor_cycles_completed_),
+  // Explicitly stop at 0xFF before incrementing the uint8_t index.
+  if (this->scan_register_ == 0xFF) {
+    this->monitor_cycles_completed_ = 1;
+    ESP_LOGI(TAG, "MONITOR cycle=1 complete attempted=256 matched=%u timeouts=%u unsolicited=%u",
              static_cast<unsigned>(this->monitor_matched_),
              static_cast<unsigned>(this->monitor_timeouts_),
              static_cast<unsigned>(this->monitor_unrelated_));
-  } else {
-    this->monitor_register_index_++;
+    this->finish_monitor_();
+    return;
   }
+
+  this->monitor_register_index_++;
 }
 
 void ToshibaDiagnosticMonitorUart::finish_monitor_() {
@@ -169,7 +153,7 @@ void ToshibaDiagnosticMonitorUart::finish_monitor_() {
   this->monitor_stop_requested_ = false;
   this->monitor_waiting_for_cycle_ = false;
 
-  ESP_LOGI(TAG, "========== TOSHIBA FULL REGISTER MONITOR STOPPED ==========");
+  ESP_LOGI(TAG, "========== TOSHIBA ONE-SHOT REGISTER SWEEP STOPPED ==========");
   ESP_LOGI(TAG, "Requests=%u matched=%u timeouts=%u unsolicited=%u cycles=%u",
            static_cast<unsigned>(this->monitor_requests_),
            static_cast<unsigned>(this->monitor_matched_),
@@ -189,8 +173,8 @@ void ToshibaDiagnosticMonitorUart::log_scan_packet_(const std::vector<uint8_t> &
 
   if (matched) {
     this->scan_matched_response_ = true;
-    ESP_LOGI(TAG, "MONITOR cycle=%u reg=0x%02X length=%u checksum=OK",
-             static_cast<unsigned>(this->monitor_cycles_completed_ + 1),
+    ESP_LOGI(TAG, "MONITOR cycle=1 request=0x%02X response=0x%02X length=%u checksum=OK",
+             static_cast<unsigned>(this->scan_register_),
              static_cast<unsigned>(response_register),
              static_cast<unsigned>(raw_data.size()));
     this->log_monitor_decoded_(raw_data, response_register);
