@@ -7,9 +7,11 @@
 namespace esphome {
 namespace toshiba_suzumi {
 
-static const uint8_t MONITOR_REGISTERS[] = {0x90, 0x92, 0x94, 0x96, 0x97, 0x98, 0x99, 0x9A};
+// A4 is the candidate remote-event/alert register.  The responsive 0x9? registers
+// are read immediately afterwards, then the complete sequence is repeated every 5 s.
+static const uint8_t MONITOR_REGISTERS[] = {0xA4, 0x90, 0x92, 0x94, 0x96, 0x97, 0x98, 0x99, 0x9A};
 static const size_t MONITOR_REGISTER_COUNT = sizeof(MONITOR_REGISTERS) / sizeof(MONITOR_REGISTERS[0]);
-static const uint32_t MONITOR_DURATION = 10000;
+static const uint32_t MONITOR_CYCLE_INTERVAL = 5000;
 static const uint32_t MONITOR_RESPONSE_TIMEOUT = 350;
 static const uint32_t MONITOR_QUIET_PERIOD = 20;
 static const size_t MONITOR_LOG_CHUNK_BYTES = 24;
@@ -24,7 +26,8 @@ static uint8_t monitor_checksum_(const std::vector<uint8_t> &data) {
 void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
   if (enabled) {
     if (this->scan_active_) {
-      ESP_LOGI(TAG, "Rapid timer-bank monitor already running.");
+      this->monitor_stop_requested_ = false;
+      ESP_LOGI(TAG, "Five-second A4/timer-bank monitor already running.");
       return;
     }
 
@@ -46,10 +49,12 @@ void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
     for (auto &payload : this->monitor_last_payload_)
       payload.clear();
 
-    ESP_LOGI(TAG, "========== TOSHIBA RAPID TIMER-BANK MONITOR STARTED ==========");
-    ESP_LOGI(TAG, "registers=[90,92,94,96,97,98,99,9A] duration=10s read_only=YES timeout=350ms");
-    ESP_LOGI(TAG, "Matched payloads are retained; only first values and changes are highlighted.");
-    ESP_LOGI(TAG, "All unsolicited packets are logged in full. Normal polling is paused.");
+    ESP_LOGI(TAG, "========== TOSHIBA A4 + TIMER-BANK MONITOR STARTED ==========");
+    ESP_LOGI(TAG, "sequence=[A4,90,92,94,96,97,98,99,9A] cadence=5s read_only=YES timeout=350ms");
+    ESP_LOGI(TAG, "A4 is read first; the responsive 0x9? bank follows immediately.");
+    ESP_LOGI(TAG, "First values and changes are highlighted; unsolicited packets are logged in full.");
+    ESP_LOGI(TAG, "Normal polling paused until monitor is disabled.");
+    ESP_LOGI(TAG, "MONITOR pass=1 started");
     return;
   }
 
@@ -57,7 +62,7 @@ void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
     return;
 
   this->monitor_stop_requested_ = true;
-  ESP_LOGI(TAG, "Rapid timer-bank monitor stop requested; finishing current read.");
+  ESP_LOGI(TAG, "A4/timer-bank monitor stop requested; finishing current read.");
   if (!this->scan_request_sent_)
     this->finish_monitor_();
 }
@@ -68,10 +73,19 @@ void ToshibaDiagnosticMonitorUart::process_scan_() {
 
   const uint32_t now = millis();
 
-  if ((this->monitor_stop_requested_ || now - this->monitor_cycle_started_ >= MONITOR_DURATION) &&
-      !this->scan_request_sent_) {
+  if (this->monitor_stop_requested_ && !this->scan_request_sent_) {
     this->finish_monitor_();
     return;
+  }
+
+  if (this->monitor_waiting_for_cycle_) {
+    if (now - this->monitor_cycle_started_ < MONITOR_CYCLE_INTERVAL)
+      return;
+
+    this->monitor_cycle_started_ = now;
+    this->monitor_register_index_ = 0;
+    this->monitor_waiting_for_cycle_ = false;
+    ESP_LOGI(TAG, "MONITOR pass=%u started", static_cast<unsigned>(this->monitor_cycles_completed_ + 1));
   }
 
   if (!this->scan_request_sent_) {
@@ -112,22 +126,26 @@ void ToshibaDiagnosticMonitorUart::complete_monitor_request_() {
     this->monitor_matched_++;
   } else {
     this->monitor_timeouts_++;
-    ESP_LOGI(TAG, "MONITOR sample=%u reg=0x%02X timeout t=%ums",
-             static_cast<unsigned>(this->monitor_requests_), static_cast<unsigned>(this->scan_register_),
+    ESP_LOGI(TAG, "MONITOR pass=%u reg=0x%02X timeout t=%ums",
+             static_cast<unsigned>(this->monitor_cycles_completed_ + 1),
+             static_cast<unsigned>(this->scan_register_),
              static_cast<unsigned>(millis() - this->monitor_cycle_started_));
   }
 
   this->scan_request_sent_ = false;
 
-  if (this->monitor_stop_requested_ || millis() - this->monitor_cycle_started_ >= MONITOR_DURATION) {
+  if (this->monitor_stop_requested_) {
     this->finish_monitor_();
     return;
   }
 
   this->monitor_register_index_++;
   if (this->monitor_register_index_ >= MONITOR_REGISTER_COUNT) {
-    this->monitor_register_index_ = 0;
     this->monitor_cycles_completed_++;
+    ESP_LOGI(TAG, "MONITOR pass=%u complete elapsed=%ums",
+             static_cast<unsigned>(this->monitor_cycles_completed_),
+             static_cast<unsigned>(millis() - this->monitor_cycle_started_));
+    this->monitor_waiting_for_cycle_ = true;
   }
 }
 
@@ -143,9 +161,8 @@ void ToshibaDiagnosticMonitorUart::finish_monitor_() {
   this->monitor_waiting_for_cycle_ = false;
 
   this->log_timer_bank_snapshot_();
-  ESP_LOGI(TAG, "========== TOSHIBA RAPID TIMER-BANK MONITOR STOPPED ==========");
-  ESP_LOGI(TAG, "elapsed=%ums requests=%u matched=%u timeouts=%u unsolicited=%u complete_passes=%u",
-           static_cast<unsigned>(millis() - this->monitor_cycle_started_),
+  ESP_LOGI(TAG, "========== TOSHIBA A4 + TIMER-BANK MONITOR STOPPED ==========");
+  ESP_LOGI(TAG, "requests=%u matched=%u timeouts=%u unsolicited=%u complete_passes=%u",
            static_cast<unsigned>(this->monitor_requests_), static_cast<unsigned>(this->monitor_matched_),
            static_cast<unsigned>(this->monitor_timeouts_), static_cast<unsigned>(this->monitor_unrelated_),
            static_cast<unsigned>(this->monitor_cycles_completed_));
@@ -188,12 +205,17 @@ void ToshibaDiagnosticMonitorUart::remember_monitor_payload_(uint8_t response_re
 
   const uint32_t elapsed = millis() - this->monitor_cycle_started_;
   if (!this->monitor_payload_seen_[index]) {
-    ESP_LOGI(TAG, "MONITOR FIRST t=%ums reg=0x%02X bytes=[%s]", static_cast<unsigned>(elapsed),
+    ESP_LOGI(TAG, "MONITOR FIRST pass=%u t=%ums reg=0x%02X bytes=[%s]",
+             static_cast<unsigned>(this->monitor_cycles_completed_ + 1), static_cast<unsigned>(elapsed),
              static_cast<unsigned>(response_register), format_hex_pretty(payload).c_str());
   } else if (this->monitor_last_payload_[index] != payload) {
-    ESP_LOGI(TAG, "MONITOR CHANGE t=%ums reg=0x%02X old=[%s] new=[%s]", static_cast<unsigned>(elapsed),
+    ESP_LOGI(TAG, "MONITOR CHANGE pass=%u t=%ums reg=0x%02X old=[%s] new=[%s]",
+             static_cast<unsigned>(this->monitor_cycles_completed_ + 1), static_cast<unsigned>(elapsed),
              static_cast<unsigned>(response_register),
              format_hex_pretty(this->monitor_last_payload_[index]).c_str(), format_hex_pretty(payload).c_str());
+    if (response_register == 0xA4)
+      ESP_LOGI(TAG, "MONITOR A4-TRIGGER pass=%u t=%ums; reading 0x9? bank immediately",
+               static_cast<unsigned>(this->monitor_cycles_completed_ + 1), static_cast<unsigned>(elapsed));
   }
 
   this->monitor_last_payload_[index] = payload;
@@ -201,6 +223,14 @@ void ToshibaDiagnosticMonitorUart::remember_monitor_payload_(uint8_t response_re
 }
 
 void ToshibaDiagnosticMonitorUart::log_timer_bank_snapshot_() const {
+  const size_t a4_index = 0xA4 - 0x80;
+  if (this->monitor_payload_seen_[a4_index]) {
+    ESP_LOGI(TAG, "MONITOR FINAL reg=0xA4 bytes=[%s]",
+             format_hex_pretty(this->monitor_last_payload_[a4_index]).c_str());
+  } else {
+    ESP_LOGI(TAG, "MONITOR FINAL reg=0xA4 unavailable");
+  }
+
   ESP_LOGI(TAG, "MONITOR TIMER-BANK final-snapshot-begin");
   for (uint16_t reg = 0x90; reg <= 0x9F; reg++) {
     const size_t index = reg - 0x80;
@@ -228,13 +258,14 @@ void ToshibaDiagnosticMonitorUart::log_scan_packet_(const std::vector<uint8_t> &
   this->monitor_unrelated_++;
   const uint32_t elapsed = millis() - this->monitor_cycle_started_;
   if (response_register >= 0) {
-    ESP_LOGI(TAG, "MONITOR UNSOLICITED t=%ums request=0x%02X response=0x%02X length=%u",
-             static_cast<unsigned>(elapsed), static_cast<unsigned>(this->scan_register_),
-             static_cast<unsigned>(response_register), static_cast<unsigned>(raw_data.size()));
-  } else {
-    ESP_LOGI(TAG, "MONITOR UNSOLICITED t=%ums request=0x%02X response=unknown length=%u",
-             static_cast<unsigned>(elapsed), static_cast<unsigned>(this->scan_register_),
+    ESP_LOGI(TAG, "MONITOR UNSOLICITED pass=%u t=%ums request=0x%02X response=0x%02X length=%u",
+             static_cast<unsigned>(this->monitor_cycles_completed_ + 1), static_cast<unsigned>(elapsed),
+             static_cast<unsigned>(this->scan_register_), static_cast<unsigned>(response_register),
              static_cast<unsigned>(raw_data.size()));
+  } else {
+    ESP_LOGI(TAG, "MONITOR UNSOLICITED pass=%u t=%ums request=0x%02X response=unknown length=%u",
+             static_cast<unsigned>(this->monitor_cycles_completed_ + 1), static_cast<unsigned>(elapsed),
+             static_cast<unsigned>(this->scan_register_), static_cast<unsigned>(raw_data.size()));
   }
   this->log_monitor_bytes_(raw_data, response_register);
 }
