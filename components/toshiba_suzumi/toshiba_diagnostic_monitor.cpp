@@ -7,6 +7,7 @@ namespace esphome {
 namespace toshiba_suzumi {
 
 static constexpr uint8_t REG = 0xA4;
+static constexpr uint32_t SAMPLE_INTERVAL = 300;
 static constexpr uint32_t TIMEOUT = 350;
 static constexpr uint32_t QUIET = 20;
 static constexpr size_t CHUNK = 24;
@@ -35,8 +36,8 @@ void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
     this->scan_register_ = REG;
     this->monitor_payload_seen_.fill(false);
     for (auto &p : this->monitor_last_payload_) p.clear();
-    ESP_LOGI(TAG, "========== TOSHIBA RAPID A4 MONITOR STARTED ==========");
-    ESP_LOGI(TAG, "register=0xA4 continuous=YES quiet=20ms timeout=350ms read_only=YES");
+    ESP_LOGI(TAG, "========== TOSHIBA 300MS A4 MONITOR STARTED ==========");
+    ESP_LOGI(TAG, "register=0xA4 interval=300ms timeout=350ms read_only=YES");
     ESP_LOGI(TAG, "Every A4 reply is logged with sample number and elapsed milliseconds.");
     return;
   }
@@ -52,6 +53,12 @@ void ToshibaDiagnosticMonitorUart::process_scan_() {
     this->finish_monitor_();
     return;
   }
+
+  if (this->monitor_waiting_for_cycle_) {
+    if (now - this->scan_register_started_ < SAMPLE_INTERVAL) return;
+    this->monitor_waiting_for_cycle_ = false;
+  }
+
   if (!this->scan_request_sent_) {
     if ((!this->scan_started_ && !this->command_queue_.empty()) || !this->rx_message_.empty() ||
         now - this->last_command_timestamp_ < QUIET) return;
@@ -87,6 +94,7 @@ void ToshibaDiagnosticMonitorUart::complete_monitor_request_() {
              static_cast<unsigned>(millis() - this->monitor_cycle_started_));
   }
   this->scan_request_sent_ = false;
+  this->monitor_waiting_for_cycle_ = true;
   if (this->monitor_stop_requested_) this->finish_monitor_();
 }
 
@@ -99,7 +107,7 @@ void ToshibaDiagnosticMonitorUart::finish_monitor_() {
   this->monitor_stop_requested_ = false;
   this->monitor_waiting_for_cycle_ = false;
   this->log_timer_bank_snapshot_();
-  ESP_LOGI(TAG, "========== TOSHIBA RAPID A4 MONITOR STOPPED ==========");
+  ESP_LOGI(TAG, "========== TOSHIBA 300MS A4 MONITOR STOPPED ==========");
   ESP_LOGI(TAG, "elapsed=%ums requests=%u matched=%u timeouts=%u unsolicited=%u",
            static_cast<unsigned>(millis() - this->monitor_cycle_started_),
            static_cast<unsigned>(this->monitor_requests_),
