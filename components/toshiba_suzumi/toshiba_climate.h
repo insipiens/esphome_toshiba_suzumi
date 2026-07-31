@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "esphome/core/component.h"
 #include "esphome/components/binary_sensor/binary_sensor.h"
 #include "esphome/components/climate/climate.h"
@@ -15,9 +17,7 @@ class RealTimeClock;
 namespace toshiba_suzumi {
 
 static const char *const TAG = "ToshibaClimateUart";
-// default max temp for units
 static const uint8_t MAX_TEMP = 30;
-// default min temp for units without 8° heating mode
 static const uint8_t MIN_TEMP_STANDARD = 17;
 static const uint8_t SPECIAL_TEMP_OFFSET = 16;
 static const uint8_t SPECIAL_MODE_EIGHT_DEG_MIN_TEMP = 5;
@@ -85,10 +85,7 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   void set_time_sync_interval(uint32_t interval) { time_sync_interval_ = interval; }
 
  protected:
-  /// Override control to change settings of the climate device.
   void control(const climate::ClimateCall &call) override;
-
-  /// Return the traits of this controller.
   climate::ClimateTraits traits() override;
 
   std::vector<uint8_t> rx_message_;
@@ -96,7 +93,6 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   uint32_t last_command_timestamp_ = 0;
   uint32_t last_rx_char_timestamp_ = 0;
   STATE power_state_ = STATE::OFF;
-  // True while the unit is running its post-shutdown self-cleaning cycle.
   bool self_clean_running_ = false;
   optional<SPECIAL_MODE> special_mode_ = SPECIAL_MODE::STANDARD;
   select::Select *pwr_select_ = nullptr;
@@ -116,10 +112,10 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   sensor::Sensor *energy_sensor_ = nullptr;
   sensor::Sensor *power_sensor_ = nullptr;
   bool horizontal_swing_ = false;
-  uint8_t min_temp_ = 17; // default min temp for units without 8° heating mode
+  uint8_t min_temp_ = 17;
   bool heat_mode_disabled_ = false;
   bool wifi_led_disabled_ = false;
-  std::vector<const char*> supported_presets_;
+  std::vector<const char *> supported_presets_;
   uint32_t last_time_sync_ = 0;
   uint32_t last_energy_sync_ = 0;
   uint32_t last_total_daily_energy_ = 0;
@@ -192,12 +188,18 @@ class ToshibaDiagnosticMonitorUart : public ToshibaClimateUart {
   uint32_t monitor_timeouts_ = 0;
   uint32_t monitor_unrelated_ = 0;
   uint32_t monitor_cycles_completed_ = 0;
+  std::array<std::vector<uint8_t>, 128> monitor_last_payload_{};
+  std::array<bool, 128> monitor_payload_seen_{};
 
   void send_monitor_request_();
   void complete_monitor_request_();
   void finish_monitor_();
   void log_monitor_bytes_(const std::vector<uint8_t> &raw_data, int16_t response_register) const;
-  void log_monitor_decoded_(const std::vector<uint8_t> &raw_data, int16_t response_register) const;
+  void log_monitor_decoded_(const std::vector<uint8_t> &raw_data, int16_t response_register);
+  bool extract_monitor_payload_(const std::vector<uint8_t> &raw_data, int16_t response_register,
+                                std::vector<uint8_t> &payload) const;
+  void remember_monitor_payload_(uint8_t response_register, const std::vector<uint8_t> &payload);
+  void log_timer_bank_snapshot_() const;
 };
 
 class ToshibaPwrModeSelect : public select::Select, public esphome::Parented<ToshibaClimateUart> {
