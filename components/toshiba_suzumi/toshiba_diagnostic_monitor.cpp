@@ -12,6 +12,12 @@ static constexpr uint32_t MONITOR_RESPONSE_TIMEOUT_MS = 1500;
 static constexpr uint32_t MONITOR_QUIET_PERIOD_MS = 250;
 static constexpr size_t CHUNK = 24;
 
+static uint8_t monitor_checksum_(const std::vector<uint8_t> &frame) {
+  uint8_t sum = 0;
+  for (size_t i = 1; i < frame.size(); i++) sum += frame[i];
+  return static_cast<uint8_t>(0U - sum);
+}
+
 void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
   if (enabled) {
     if (this->scan_active_) return;
@@ -76,7 +82,7 @@ void ToshibaDiagnosticMonitorUart::send_monitor_request_() {
 
   std::vector<uint8_t> frame = {0x02, 0x00, 0x03, 0x10, 0x00, 0x00, 0x06,
                                 0x01, 0x30, 0x01, 0x00, 0x01, this->scan_register_};
-  frame.push_back(checksum(frame, frame.size()));
+  frame.push_back(monitor_checksum_(frame));
 
   this->scan_request_sent_ = true;
   this->scan_matched_response_ = false;
