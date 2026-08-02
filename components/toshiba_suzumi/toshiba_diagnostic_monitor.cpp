@@ -20,7 +20,9 @@ void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
     if (this->scan_active_) return;
     this->scan_active_ = true;
     this->scan_started_ = true;
-    this->scan_request_sent_ = false;
+    // The common RX path only calls log_scan_packet_ while this flag is true.
+    // No request is actually sent: send_monitor_request_ remains inert below.
+    this->scan_request_sent_ = true;
     this->scan_matched_response_ = false;
     this->monitor_stop_requested_ = false;
     this->monitor_waiting_for_cycle_ = false;
