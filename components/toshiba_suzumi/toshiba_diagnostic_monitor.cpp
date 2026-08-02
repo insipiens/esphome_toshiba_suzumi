@@ -7,16 +7,24 @@
 namespace esphome {
 namespace toshiba_suzumi {
 
-// Focused probe of register/message 0x99 using the two observed frame classes.
-static constexpr std::array<uint8_t, 2> COMMAND_CLASSES = {0x10, 0x11};
+struct Probe {
+  uint8_t frame_class;
+  uint8_t direction;
+  const char *name;
+};
+
+static constexpr std::array<Probe, 2> PROBES = {{
+    {0x10, 0x00, "baseline-10-00"},
+    {0x11, 0x01, "candidate-11-01"},
+}};
 static constexpr uint8_t TARGET_REG = 0x99;
-static constexpr uint32_t TIMEOUT = 3000;
+static constexpr uint32_t TIMEOUT = 5000;
 static constexpr uint32_t QUIET = 50;
-static constexpr uint32_t BETWEEN_TESTS = 1000;
+static constexpr uint32_t BETWEEN_TESTS = 1500;
 static constexpr size_t CHUNK = 24;
 
-static size_t class_index_ = 0;
-static uint8_t active_class_ = 0x10;
+static size_t probe_index_ = 0;
+static Probe active_probe_ = PROBES[0];
 
 static uint8_t checksum_(const std::vector<uint8_t> &d) {
   uint8_t s = 0;
@@ -39,13 +47,13 @@ void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
     this->monitor_timeouts_ = 0;
     this->monitor_unrelated_ = 0;
     this->monitor_cycles_completed_ = 0;
-    class_index_ = 0;
-    active_class_ = COMMAND_CLASSES[0];
+    probe_index_ = 0;
+    active_probe_ = PROBES[0];
     this->scan_register_ = TARGET_REG;
     this->monitor_payload_seen_.fill(false);
     for (auto &p : this->monitor_last_payload_) p.clear();
-    ESP_LOGI(TAG, "========== TOSHIBA 0x99 DUAL-CLASS PROBE STARTED ==========");
-    ESP_LOGI(TAG, "target=0x99 classes=[0x10,0x11] timeout=%ums",
+    ESP_LOGI(TAG, "========== TOSHIBA 0x99 HEADER PROBE STARTED ==========");
+    ESP_LOGI(TAG, "tests=2 target=0x99 timeout=%ums candidate=class11/direction01",
              static_cast<unsigned>(TIMEOUT));
     return;
   }
@@ -77,7 +85,7 @@ void ToshibaDiagnosticMonitorUart::process_scan_() {
     this->scan_register_started_ = now;
     this->scan_started_ = true;
     this->scan_request_sent_ = true;
-    active_class_ = COMMAND_CLASSES[class_index_];
+    active_probe_ = PROBES[probe_index_];
     this->send_monitor_request_();
     return;
   }
@@ -90,11 +98,12 @@ void ToshibaDiagnosticMonitorUart::process_scan_() {
 }
 
 void ToshibaDiagnosticMonitorUart::send_monitor_request_() {
-  std::vector<uint8_t> p = {2,0,3,active_class_,0,0,6,1,48,1,0,1,TARGET_REG};
+  std::vector<uint8_t> p = {2,0,3,active_probe_.frame_class,active_probe_.direction,0,6,1,48,1,0,1,TARGET_REG};
   p.push_back(checksum_(p));
   this->monitor_requests_++;
-  ESP_LOGI(TAG, "0x99 TEST SEND test=%u/2 class=0x%02X length=%u bytes=[%s]",
-           static_cast<unsigned>(class_index_ + 1), active_class_,
+  ESP_LOGI(TAG, "0x99 PROBE SEND test=%u/2 name=%s class=0x%02X direction=0x%02X length=%u bytes=[%s]",
+           static_cast<unsigned>(probe_index_ + 1), active_probe_.name,
+           active_probe_.frame_class, active_probe_.direction,
            static_cast<unsigned>(p.size()), format_hex_pretty(p).c_str());
   this->send_to_uart(ToshibaCommand{.cmd = static_cast<ToshibaCommandType>(TARGET_REG), .payload = p});
 }
@@ -102,20 +111,19 @@ void ToshibaDiagnosticMonitorUart::send_monitor_request_() {
 void ToshibaDiagnosticMonitorUart::complete_monitor_request_() {
   if (this->scan_matched_response_) {
     this->monitor_matched_++;
-    ESP_LOGI(TAG, "0x99 TEST COMPLETE test=%u/2 class=0x%02X result=RESPONSE",
-             static_cast<unsigned>(class_index_ + 1), active_class_);
+    ESP_LOGI(TAG, "0x99 PROBE COMPLETE test=%u/2 name=%s result=0x99_RESPONSE",
+             static_cast<unsigned>(probe_index_ + 1), active_probe_.name);
   } else {
     this->monitor_timeouts_++;
-    ESP_LOGI(TAG, "0x99 TEST COMPLETE test=%u/2 class=0x%02X result=TIMEOUT",
-             static_cast<unsigned>(class_index_ + 1), active_class_);
+    ESP_LOGI(TAG, "0x99 PROBE COMPLETE test=%u/2 name=%s result=TIMEOUT",
+             static_cast<unsigned>(probe_index_ + 1), active_probe_.name);
   }
 
   this->scan_request_sent_ = false;
   this->monitor_waiting_for_cycle_ = true;
   this->scan_register_started_ = millis();
-  class_index_++;
-
-  if (class_index_ >= COMMAND_CLASSES.size()) {
+  probe_index_++;
+  if (probe_index_ >= PROBES.size()) {
     this->finish_monitor_();
     return;
   }
@@ -130,7 +138,7 @@ void ToshibaDiagnosticMonitorUart::finish_monitor_() {
   this->scan_matched_response_ = false;
   this->monitor_stop_requested_ = false;
   this->monitor_waiting_for_cycle_ = false;
-  ESP_LOGI(TAG, "========== TOSHIBA 0x99 DUAL-CLASS PROBE STOPPED ==========");
+  ESP_LOGI(TAG, "========== TOSHIBA 0x99 HEADER PROBE STOPPED ==========");
   ESP_LOGI(TAG, "elapsed=%ums requests=%u matched=%u timeouts=%u unrelated=%u",
            static_cast<unsigned>(millis() - this->monitor_cycle_started_),
            static_cast<unsigned>(this->monitor_requests_),
@@ -156,8 +164,8 @@ bool ToshibaDiagnosticMonitorUart::extract_monitor_payload_(const std::vector<ui
 void ToshibaDiagnosticMonitorUart::remember_monitor_payload_(uint8_t reg,
                                                               const std::vector<uint8_t> &payload) {
   const size_t i = reg - 0x80;
-  ESP_LOGI(TAG, "0x99 PAYLOAD class=0x%02X length=%u bytes=[%s]",
-           active_class_, static_cast<unsigned>(payload.size()),
+  ESP_LOGI(TAG, "0x99 PAYLOAD name=%s length=%u bytes=[%s]",
+           active_probe_.name, static_cast<unsigned>(payload.size()),
            format_hex_pretty(payload).c_str());
   this->monitor_last_payload_[i] = payload;
   this->monitor_payload_seen_[i] = true;
@@ -168,9 +176,9 @@ void ToshibaDiagnosticMonitorUart::log_timer_bank_snapshot_() const {}
 void ToshibaDiagnosticMonitorUart::log_scan_packet_(const std::vector<uint8_t> &raw) {
   const int16_t reg = this->extract_response_register_(raw);
   this->scan_last_packet_timestamp_ = millis();
-
-  ESP_LOGI(TAG, "0x99 RX during_class=0x%02X response=%s length=%u",
-           active_class_, reg >= 0 ? str_sprintf("0x%02X", reg).c_str() : "unknown",
+  ESP_LOGI(TAG, "0x99 RX during=%s response=%s length=%u",
+           active_probe_.name,
+           reg >= 0 ? str_sprintf("0x%02X", reg).c_str() : "unknown",
            static_cast<unsigned>(raw.size()));
   this->log_monitor_bytes_(raw, reg);
 
@@ -187,8 +195,9 @@ void ToshibaDiagnosticMonitorUart::log_monitor_bytes_(const std::vector<uint8_t>
   for (size_t c = 0; c < n; c++) {
     const size_t o = c * CHUNK;
     const size_t z = std::min(CHUNK, raw.size() - o);
-    ESP_LOGI(TAG, "0x99 RAW class=0x%02X reg=%s chunk=%u/%u offset=%u bytes=[%s]",
-             active_class_, reg >= 0 ? str_sprintf("0x%02X", reg).c_str() : "unknown",
+    ESP_LOGI(TAG, "0x99 RAW name=%s reg=%s chunk=%u/%u offset=%u bytes=[%s]",
+             active_probe_.name,
+             reg >= 0 ? str_sprintf("0x%02X", reg).c_str() : "unknown",
              static_cast<unsigned>(c + 1), static_cast<unsigned>(n), static_cast<unsigned>(o),
              format_hex_pretty(raw.data() + o, z).c_str());
   }
