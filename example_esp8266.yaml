@@ -50,9 +50,9 @@ climate:
       #- "Comfort"
     #disable_wifi_led: true # Optional. Disable Wifi LED on internal unit.
     #compressor_load:
-    #  name: "Compressor Load"
+    #  name: "IDU Load"
     #compressor_current:
-    #  name: "Compressor Current"
+    #  name: "IDU Current"
     #odu_discharge_temp:
     #  name: "ODU Discharge Temp"
     #odu_suction_temp:
