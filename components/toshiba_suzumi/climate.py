@@ -8,12 +8,10 @@ from esphome.const import (
     UNIT_PERCENT,
     UNIT_AMPERE,
     UNIT_WATT_HOURS,
-    UNIT_WATT,
     DEVICE_CLASS_TEMPERATURE,
     DEVICE_CLASS_CURRENT,
     DEVICE_CLASS_RUNNING,
     DEVICE_CLASS_ENERGY,
-    DEVICE_CLASS_POWER,
     CONF_TIME_ID,
     STATE_CLASS_TOTAL_INCREASING,
     __version__ as ESPHOME_VERSION
@@ -45,7 +43,6 @@ CONF_SUPPORTED_PRESETS = "supported_presets"
 CONF_SELF_CLEAN = "self_clean"
 CONF_TIME_SYNC_INTERVAL = "time_sync_interval"
 CONF_ENERGY = "energy"
-CONF_POWER = "power"
 
 FEATURE_HORIZONTAL_SWING = "horizontal_swing"
 MIN_TEMP = "min_temp"
@@ -145,12 +142,6 @@ CONFIG_SCHEMA = climate.climate_schema(ToshibaClimateUart).extend(
                 accuracy_decimals=0,
                 device_class=DEVICE_CLASS_ENERGY,
                 state_class=STATE_CLASS_TOTAL_INCREASING,
-            ),
-        cv.Optional(CONF_POWER): sensor.sensor_schema(
-                unit_of_measurement=UNIT_WATT,
-                accuracy_decimals=1,
-                device_class=DEVICE_CLASS_POWER,
-                state_class=STATE_CLASS_MEASUREMENT,
             ),
     }
 ).extend(uart.UART_DEVICE_SCHEMA).extend(cv.polling_component_schema("120s"))
@@ -254,7 +245,3 @@ async def to_code(config):
     if CONF_ENERGY in config:
         sens = await sensor.new_sensor(config[CONF_ENERGY])
         cg.add(var.set_energy_sensor(sens))
-
-    if CONF_POWER in config:
-        sens = await sensor.new_sensor(config[CONF_POWER])
-        cg.add(var.set_power_sensor(sens))
