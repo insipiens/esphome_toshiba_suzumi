@@ -49,6 +49,8 @@ climate:
       #- "Floor"
       #- "Comfort"
     #disable_wifi_led: true # Optional. Disable Wifi LED on internal unit.
+    #energy:
+    #  name: "IDU Daily Energy"
     #compressor_load:
     #  name: "IDU Load"
     #compressor_current:
