@@ -535,7 +535,7 @@ void ToshibaClimateUart::parseResponse(std::vector<uint8_t> rawData) {
       if (this->compressor_current_sensor_ != nullptr) {
         uint8_t raw_val = rawData[odu_offset + 6];
         if (raw_val < 254) {
-          this->compressor_current_sensor_->publish_state(raw_val / 10.0f);
+          this->compressor_current_sensor_->publish_state(raw_val / 10.0f *  * 0.827f);
         }
       }
       break;
