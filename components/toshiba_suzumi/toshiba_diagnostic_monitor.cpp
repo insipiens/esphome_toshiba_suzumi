@@ -8,15 +8,7 @@ namespace toshiba_suzumi {
 
 static constexpr uint8_t MONITOR_FIRST_REGISTER = 0x90;
 static constexpr uint8_t MONITOR_LAST_REGISTER = 0x9F;
-static constexpr uint32_t MONITOR_RESPONSE_TIMEOUT_MS = 1500;
-static constexpr uint32_t MONITOR_QUIET_PERIOD_MS = 250;
 static constexpr size_t CHUNK = 24;
-
-static uint8_t monitor_checksum_(const std::vector<uint8_t> &frame) {
-  uint8_t sum = 0;
-  for (size_t i = 1; i < frame.size(); i++) sum += frame[i];
-  return static_cast<uint8_t>(0U - sum);
-}
 
 void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
   if (enabled) {
@@ -24,13 +16,15 @@ void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
 
     this->scan_active_ = true;
     this->scan_started_ = true;
-    this->scan_request_sent_ = false;
+
+    // validate_message_ routes received frames through log_scan_packet_ only
+    // while scan_request_sent_ is true. In passive mode this flag therefore
+    // means "capture enabled"; no UART request is actually transmitted.
+    this->scan_request_sent_ = true;
     this->scan_matched_response_ = false;
     this->monitor_stop_requested_ = false;
     this->monitor_waiting_for_cycle_ = false;
-    this->monitor_register_index_ = 0;
     this->monitor_cycle_started_ = millis();
-    this->scan_last_packet_timestamp_ = millis();
     this->monitor_requests_ = 0;
     this->monitor_matched_ = 0;
     this->monitor_timeouts_ = 0;
@@ -38,90 +32,28 @@ void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
     this->monitor_cycles_completed_ = 0;
     this->monitor_payload_seen_.fill(false);
 
-    ESP_LOGI(TAG, "========== TOSHIBA 0x9x REGISTER CAPTURE STARTED ==========");
-    ESP_LOGI(TAG, "registers=0x%02X-0x%02X response_timeout=%ums quiet_period=%ums",
-             MONITOR_FIRST_REGISTER, MONITOR_LAST_REGISTER,
-             static_cast<unsigned>(MONITOR_RESPONSE_TIMEOUT_MS),
-             static_cast<unsigned>(MONITOR_QUIET_PERIOD_MS));
+    ESP_LOGI(TAG, "========== TOSHIBA PASSIVE 0x9x CAPTURE STARTED ==========");
+    ESP_LOGI(TAG, "capturing unsolicited registers 0x%02X-0x%02X; no requests will be sent",
+             MONITOR_FIRST_REGISTER, MONITOR_LAST_REGISTER);
     return;
   }
 
-  if (this->scan_active_) {
-    this->monitor_stop_requested_ = true;
-    if (!this->scan_request_sent_) this->finish_monitor_();
-  }
+  if (this->scan_active_) this->finish_monitor_();
 }
 
 void ToshibaDiagnosticMonitorUart::process_scan_() {
-  if (!this->scan_active_) return;
-
-  const uint32_t now = millis();
-  if (this->monitor_stop_requested_ && !this->scan_request_sent_) {
-    this->finish_monitor_();
-    return;
-  }
-
-  if (!this->scan_request_sent_) {
-    if (!this->rx_message_.empty()) return;
-    if (now - this->scan_last_packet_timestamp_ < MONITOR_QUIET_PERIOD_MS) return;
-    this->send_monitor_request_();
-    return;
-  }
-
-  if (now - this->scan_register_started_ >= MONITOR_RESPONSE_TIMEOUT_MS) {
-    ESP_LOGW(TAG, "PROGRAMME TIMEOUT reg=0x%02X after=%ums",
-             static_cast<unsigned>(this->scan_register_),
-             static_cast<unsigned>(now - this->scan_register_started_));
-    this->monitor_timeouts_++;
-    this->complete_monitor_request_();
-  }
+  // Passive monitor: deliberately send nothing and remain armed until the
+  // Home Assistant switch is turned off.
 }
 
-void ToshibaDiagnosticMonitorUart::send_monitor_request_() {
-  this->scan_register_ = static_cast<uint8_t>(MONITOR_FIRST_REGISTER + this->monitor_register_index_);
-
-  std::vector<uint8_t> frame = {0x02, 0x00, 0x03, 0x10, 0x00, 0x00, 0x06,
-                                0x01, 0x30, 0x01, 0x00, 0x01, this->scan_register_};
-  frame.push_back(monitor_checksum_(frame));
-
-  this->scan_request_sent_ = true;
-  this->scan_matched_response_ = false;
-  this->scan_register_started_ = millis();
-  this->monitor_requests_++;
-
-  ESP_LOGI(TAG, "PROGRAMME REQUEST seq=%u reg=0x%02X bytes=[%s]",
-           static_cast<unsigned>(this->monitor_requests_),
-           static_cast<unsigned>(this->scan_register_),
-           format_hex_pretty(frame).c_str());
-  this->send_to_uart(ToshibaCommand{
-      .cmd = static_cast<ToshibaCommandType>(this->scan_register_),
-      .payload = frame,
-  });
-}
-
-void ToshibaDiagnosticMonitorUart::complete_monitor_request_() {
-  this->scan_request_sent_ = false;
-  this->scan_matched_response_ = false;
-  this->scan_last_packet_timestamp_ = millis();
-
-  if (this->monitor_stop_requested_) {
-    this->finish_monitor_();
-    return;
-  }
-
-  const uint8_t register_count = MONITOR_LAST_REGISTER - MONITOR_FIRST_REGISTER + 1;
-  this->monitor_register_index_++;
-  if (this->monitor_register_index_ >= register_count) {
-    this->monitor_cycles_completed_++;
-    this->log_timer_bank_snapshot_();
-    this->finish_monitor_();
-  }
-}
+void ToshibaDiagnosticMonitorUart::send_monitor_request_() {}
+void ToshibaDiagnosticMonitorUart::complete_monitor_request_() {}
 
 void ToshibaDiagnosticMonitorUart::finish_monitor_() {
   if (!this->scan_active_) return;
 
   const uint32_t elapsed = millis() - this->monitor_cycle_started_;
+  this->log_timer_bank_snapshot_();
   this->scan_active_ = false;
   this->scan_started_ = false;
   this->scan_request_sent_ = false;
@@ -129,14 +61,11 @@ void ToshibaDiagnosticMonitorUart::finish_monitor_() {
   this->monitor_stop_requested_ = false;
   this->monitor_waiting_for_cycle_ = false;
 
-  ESP_LOGI(TAG, "========== TOSHIBA 0x9x REGISTER CAPTURE STOPPED ==========");
-  ESP_LOGI(TAG, "elapsed=%ums requests=%u matched=%u timeouts=%u unrelated=%u cycles=%u",
+  ESP_LOGI(TAG, "========== TOSHIBA PASSIVE 0x9x CAPTURE STOPPED ==========");
+  ESP_LOGI(TAG, "elapsed=%ums captured=%u ignored=%u",
            static_cast<unsigned>(elapsed),
-           static_cast<unsigned>(this->monitor_requests_),
            static_cast<unsigned>(this->monitor_matched_),
-           static_cast<unsigned>(this->monitor_timeouts_),
-           static_cast<unsigned>(this->monitor_unrelated_),
-           static_cast<unsigned>(this->monitor_cycles_completed_));
+           static_cast<unsigned>(this->monitor_unrelated_));
 }
 
 bool ToshibaDiagnosticMonitorUart::extract_monitor_payload_(const std::vector<uint8_t> &raw,
@@ -168,13 +97,10 @@ void ToshibaDiagnosticMonitorUart::remember_monitor_payload_(uint8_t reg,
 }
 
 void ToshibaDiagnosticMonitorUart::log_timer_bank_snapshot_() const {
-  ESP_LOGI(TAG, "========== TOSHIBA 0x9x REGISTER SUMMARY ==========");
+  ESP_LOGI(TAG, "========== TOSHIBA PASSIVE 0x9x SUMMARY ==========");
   for (uint8_t reg = MONITOR_FIRST_REGISTER; reg <= MONITOR_LAST_REGISTER; reg++) {
     const size_t index = reg - 0x80;
-    if (!this->monitor_payload_seen_[index]) {
-      ESP_LOGI(TAG, "PROGRAMME SUMMARY reg=0x%02X response=NONE", static_cast<unsigned>(reg));
-      continue;
-    }
+    if (!this->monitor_payload_seen_[index]) continue;
 
     const auto &payload = this->monitor_last_payload_[index];
     ESP_LOGI(TAG, "PROGRAMME SUMMARY reg=0x%02X payload_length=%u payload=[%s]",
@@ -185,28 +111,24 @@ void ToshibaDiagnosticMonitorUart::log_timer_bank_snapshot_() const {
 
 void ToshibaDiagnosticMonitorUart::log_scan_packet_(const std::vector<uint8_t> &raw) {
   const int16_t reg = this->extract_response_register_(raw);
-  this->scan_last_packet_timestamp_ = millis();
 
   if (reg < MONITOR_FIRST_REGISTER || reg > MONITOR_LAST_REGISTER) {
     this->monitor_unrelated_++;
-    ESP_LOGD(TAG, "PROGRAMME unrelated response reg=%s length=%u",
-             reg >= 0 ? str_sprintf("0x%02X", reg).c_str() : "unknown",
-             static_cast<unsigned>(raw.size()));
+    // Preserve normal climate parsing for unrelated traffic while passive
+    // capture is armed; otherwise the monitor would swallow every response.
+    this->parseResponse(raw);
     return;
   }
 
   const uint32_t elapsed = millis() - this->monitor_cycle_started_;
-  ESP_LOGI(TAG, "PROGRAMME RX t=%ums reg=0x%02X requested=0x%02X length=%u",
-           static_cast<unsigned>(elapsed), static_cast<unsigned>(reg),
-           static_cast<unsigned>(this->scan_register_), static_cast<unsigned>(raw.size()));
+  this->monitor_matched_++;
+  ESP_LOGI(TAG, "PROGRAMME PASSIVE RX seq=%u t=%ums class=0x%02X reg=0x%02X length=%u",
+           static_cast<unsigned>(this->monitor_matched_),
+           static_cast<unsigned>(elapsed),
+           raw.size() > 3 ? static_cast<unsigned>(raw[3]) : 0U,
+           static_cast<unsigned>(reg), static_cast<unsigned>(raw.size()));
   this->log_monitor_bytes_(raw, reg);
   this->log_monitor_decoded_(raw, reg);
-
-  if (this->scan_request_sent_ && reg == this->scan_register_) {
-    this->scan_matched_response_ = true;
-    this->monitor_matched_++;
-    this->complete_monitor_request_();
-  }
 }
 
 void ToshibaDiagnosticMonitorUart::log_monitor_bytes_(const std::vector<uint8_t> &raw, int16_t reg) const {
