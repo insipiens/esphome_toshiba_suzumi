@@ -7,10 +7,10 @@ esp32:
     type: arduino
 
 external_components:
-  - source: 
+  - source:
       type: git
       url: https://github.com/insipiens/esphome_toshiba_suzumi
-    components: [toshiba_suzumi]
+    components: [toshiba_suzumi, toshiba_output]
 
 logger:
   level: info
@@ -56,8 +56,9 @@ climate:
     #  name: "IDU Daily Energy"
     #compressor_load:
     #  name: "IDU Load"
-    #compressor_current:
-    #  name: "IDU Current"
+    compressor_current:
+      name: "IDU Current"
+      id: idu_current
     #odu_discharge_temp:
     #  name: "ODU Discharge Temp"
     #odu_suction_temp:
@@ -66,10 +67,29 @@ climate:
     #  name: "ODU Heat Exchanger Temp"
     #idu_heat_exchanger_temp:
     #  name: "IDU Heat Exchanger Temp"
-    #idu_junction_temp:
-    #  name: "IDU Junction Temp"
-    #idu_fan_speed:
-    #  name: "IDU Fan Speed"
+    idu_junction_temp:
+      name: "IDU Junction Temp"
+      id: idu_branch_temp
+    idu_fan_speed:
+      name: "IDU Fan Speed"
+      id: idu_fan_speed
+
+# Estimate delivered IDU sensible output from Toshiba room temperature,
+# branch refrigerant temperature and UART fan value. IDU Current is used only
+# as the active-load gate. Coefficients are deliberately configurable so they
+# can be refined from measured airflow/temperature tests without changing the
+# entity names or dashboards.
+toshiba_output:
+  climate_id: living_room
+  idu_current: idu_current
+  branch_temperature: idu_branch_temp
+  fan_speed: idu_fan_speed
+  cooling_output:
+    name: "IDU Cooling Output"
+  heating_output:
+    name: "IDU Heating Output"
+  cooling_coefficient: 2.72   # August 2026 cooling calibration
+  heating_coefficient: 3.264  # 2.72 x (4.2 / 3.5); refine from heating test
 
 # Optional read-only focused diagnostic monitor. Normal polling pauses while enabled.
 switch:
