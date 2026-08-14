@@ -20,15 +20,14 @@ class ToshibaOutputEstimator : public PollingComponent {
   void set_heating_coefficient(float value) { heating_coefficient_ = value; }
 
   void update() override {
-    if (climate_ == nullptr || idu_current_ == nullptr || branch_temp_ == nullptr || fan_speed_ == nullptr)
+    if (climate_ == nullptr || branch_temp_ == nullptr || fan_speed_ == nullptr)
       return;
 
-    const float current = idu_current_->state;
     const float branch = branch_temp_->state;
     const float fan = fan_speed_->state;
     const float room = climate_->current_temperature;
 
-    if (!std::isfinite(current) || !std::isfinite(branch) || !std::isfinite(fan) || !std::isfinite(room)) {
+    if (!std::isfinite(branch) || !std::isfinite(fan) || !std::isfinite(room)) {
       if (cooling_output_ != nullptr) cooling_output_->publish_state(NAN);
       if (heating_output_ != nullptr) heating_output_->publish_state(NAN);
       return;
@@ -37,7 +36,11 @@ class ToshibaOutputEstimator : public PollingComponent {
     float cooling = 0.0f;
     float heating = 0.0f;
 
-    if (current > 0.0f && fan > 0.0f) {
+    // Do not gate thermal output on the Toshiba IDU-current value. Testing showed
+    // genuine delivered cooling while that diagnostic value was zero. Fan state,
+    // climate mode and the room/branch temperature relationship are the estimator
+    // validity conditions.
+    if (fan > 0.0f) {
       if (climate_->mode == climate::CLIMATE_MODE_COOL || climate_->mode == climate::CLIMATE_MODE_DRY) {
         const float dt = room - branch;
         if (dt > 0.0f) cooling = cooling_coefficient_ * fan * dt;
