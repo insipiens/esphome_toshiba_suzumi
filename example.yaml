@@ -71,12 +71,15 @@ climate:
       name: "IDU Junction Temp"
       id: idu_branch_temp
     idu_fan_speed:
-      name: "IDU Fan Speed"
+      # Raw Toshiba air-velocity register. Measurements indicate approximately
+      # 0.1 m/s per count (e.g. 34 ~= 3.4 m/s); retained raw for compatibility.
+      name: "IDU Air Velocity x10"
       id: idu_fan_speed
 
 # Estimate delivered IDU sensible output from Toshiba room temperature,
-# branch refrigerant temperature and UART fan value. IDU Current is used only
-# as the active-load gate. Coefficients are deliberately configurable so they
+# branch refrigerant temperature and the raw air-velocity register above.
+# IDU Current is retained only as an optional diagnostic reference and does
+# not gate thermal output. Coefficients are deliberately configurable so they
 # can be refined from measured airflow/temperature tests without changing the
 # entity names or dashboards.
 toshiba_output:
