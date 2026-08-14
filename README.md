@@ -171,8 +171,8 @@ climate:
     #  name: "IDU Heat Exchanger Temp"
     #idu_junction_temp:                  # Optional. IDU heat exchanger junction temperature
     #  name: "IDU Junction Temp"
-    #idu_fan_speed:                     # Optional. Raw IDU fan-speed value
-    #  name: "IDU Fan Speed"
+    #idu_fan_speed:                      # Optional. Raw IDU air-velocity register (~0.1 m/s/count)
+    #  name: "IDU Air Velocity x10"
 ...
 ```
 
@@ -222,7 +222,7 @@ The select provides `Off`, `Swing`, `Top`, `Middle Top`, `Middle`, `Middle Botto
 
 ### Self-cleaning status
 
-Some Toshiba units run a post-shutdown self-cleaning cycle. During this cycle the indoor fan can continue running even though the climate entity is off. Configure the optional `self_clean` binary sensor to enable self-clean detection and expose the cycle in Home Assistant:
+Some Toshiba AC units run a post-shutdown self-cleaning cycle. During this cycle the indoor fan can continue running even though the climate entity is off. Configure the optional `self_clean` binary sensor to enable self-clean detection and expose the cycle in Home Assistant:
 
 ```yaml
     self_clean:
@@ -239,7 +239,7 @@ How the cycle behaves (per the Toshiba service manual):
 
 ## Outdoor/Indoor unit diagnostics (ODU/IDU sensors)
 
-Some Toshiba AC units provide extended status messages from the outdoor unit (ODU) and indoor unit (IDU). These messages contain diagnostic data such as compressor load, refrigerant temperatures, compressor current, and indoor fan speed. When any of the optional sensors below are configured, the component requests the relevant ODU or IDU status packet at the normal ESPHome `update_interval`. Unsolicited status packets are also accepted.
+Some Toshiba AC units provide extended status messages from the outdoor unit (ODU) and indoor unit (IDU). These messages contain diagnostic data such as compressor load, refrigerant temperatures, compressor current, and the indoor air-velocity register. When any of the optional sensors below are configured, the component requests the relevant ODU or IDU status packet at the normal ESPHome `update_interval`. Unsolicited status packets are also accepted.
 
 The diagnostic YAML keys use IDU/ODU terminology. Existing configurations using the older `cdu_*` or `fcu_*` keys must be updated; legacy aliases are not retained.
 
@@ -254,7 +254,9 @@ The diagnostic YAML keys use IDU/ODU terminology. Existing configurations using 
 | `odu_heat_exchanger_temp` | ODU heat exchanger temperature | °C |
 | `idu_heat_exchanger_temp` | IDU heat exchanger temperature | °C |
 | `idu_junction_temp` | IDU heat exchanger junction temperature | °C |
-| `idu_fan_speed` | Raw IDU fan-speed value; not yet confirmed as physical RPM | — |
+| `idu_fan_speed` | Raw IDU air-velocity register. Measurements show close correspondence to approximately 0.1 m/s per count; the raw scale is retained for compatibility. | 0.1 m/s/count |
+
+The `idu_fan_speed` key is retained for backward compatibility, but the value should not be interpreted as physical fan RPM. Vane-anemometer measurements on a RAS-B13J2FVG show values such as 34 corresponding closely to about 3.4 m/s at the discharge, while a register value of 55 measured about 5.3 m/s. Treat the register as a nominal/controller-derived air-velocity quantity: local outlet velocity varies with probe position, louvre setting and the discharge velocity profile.
 
 These sensors are all optional. Only the ODU or IDU status packet required by the configured sensors is polled.
 
