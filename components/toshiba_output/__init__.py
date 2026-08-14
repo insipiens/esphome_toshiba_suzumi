@@ -28,7 +28,7 @@ CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(ToshibaOutputEstimator),
         cv.Required(CONF_CLIMATE_ID): cv.use_id(climate.Climate),
-        cv.Required(CONF_IDU_CURRENT): cv.use_id(sensor.Sensor),
+        cv.Optional(CONF_IDU_CURRENT): cv.use_id(sensor.Sensor),
         cv.Required(CONF_BRANCH_TEMPERATURE): cv.use_id(sensor.Sensor),
         cv.Required(CONF_FAN_SPEED): cv.use_id(sensor.Sensor),
         cv.Optional(CONF_COOLING_OUTPUT): sensor.sensor_schema(
@@ -58,16 +58,21 @@ async def to_code(config):
     await cg.register_component(var, config)
 
     climate_var = await cg.get_variable(config[CONF_CLIMATE_ID])
-    current_var = await cg.get_variable(config[CONF_IDU_CURRENT])
     branch_var = await cg.get_variable(config[CONF_BRANCH_TEMPERATURE])
     fan_var = await cg.get_variable(config[CONF_FAN_SPEED])
 
     cg.add(var.set_climate(climate_var))
-    cg.add(var.set_idu_current_sensor(current_var))
     cg.add(var.set_branch_temperature_sensor(branch_var))
     cg.add(var.set_fan_speed_sensor(fan_var))
     cg.add(var.set_cooling_coefficient(config[CONF_COOLING_COEFFICIENT]))
     cg.add(var.set_heating_coefficient(config[CONF_HEATING_COEFFICIENT]))
+
+    # Retained only as an optional diagnostic reference. It is deliberately
+    # not used to gate thermal output because delivered cooling has been
+    # observed while Toshiba reports IDU current as zero.
+    if CONF_IDU_CURRENT in config:
+        current_var = await cg.get_variable(config[CONF_IDU_CURRENT])
+        cg.add(var.set_idu_current_sensor(current_var))
 
     if CONF_COOLING_OUTPUT in config:
         sens = await sensor.new_sensor(config[CONF_COOLING_OUTPUT])
