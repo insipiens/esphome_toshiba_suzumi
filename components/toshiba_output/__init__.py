@@ -44,7 +44,9 @@ CONFIG_SCHEMA = cv.Schema(
             state_class=STATE_CLASS_MEASUREMENT,
         ),
         # Cooling coefficient fitted from the August 2026 B13J2FVG
-        # air-side calibration: W / (UART fan unit * K).
+        # air-side calibration: W / (raw air-velocity register count * K).
+        # The Toshiba register is retained on its raw scale; measurements show
+        # approximately 0.1 m/s per count rather than physical fan RPM.
         cv.Optional(CONF_COOLING_COEFFICIENT, default=2.72): cv.positive_float,
         # Initial heating value scales the cooling coefficient by the B13's
         # rated 4.2 / 3.5 kW heating/cooling capacity ratio. Recalibrate in heat.
