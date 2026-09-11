@@ -8,6 +8,7 @@
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/select/select.h"
+#include "esphome/components/text_sensor/text_sensor.h"
 #include "toshiba_climate_mode.h"
 
 namespace esphome {
@@ -69,6 +70,8 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   void set_idu_heat_exchanger_temp_sensor(sensor::Sensor *sensor) { idu_heat_exchanger_temp_sensor_ = sensor; }
   void set_idu_junction_temp_sensor(sensor::Sensor *sensor) { idu_junction_temp_sensor_ = sensor; }
   void set_idu_fan_speed_sensor(sensor::Sensor *sensor) { idu_fan_speed_sensor_ = sensor; }
+  void set_idu_model_sensor(text_sensor::TextSensor *sensor) { idu_model_sensor_ = sensor; }
+  void set_odu_model_sensor(text_sensor::TextSensor *sensor) { odu_model_sensor_ = sensor; }
   void set_time(time::RealTimeClock *time) { time_ = time; }
   void set_energy_sensor(sensor::Sensor *sensor) { energy_sensor_ = sensor; }
   void set_power_sensor(sensor::Sensor *sensor) { power_sensor_ = sensor; }
@@ -108,6 +111,8 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   sensor::Sensor *idu_heat_exchanger_temp_sensor_ = nullptr;
   sensor::Sensor *idu_junction_temp_sensor_ = nullptr;
   sensor::Sensor *idu_fan_speed_sensor_ = nullptr;
+  text_sensor::TextSensor *idu_model_sensor_ = nullptr;
+  text_sensor::TextSensor *odu_model_sensor_ = nullptr;
   time::RealTimeClock *time_ = nullptr;
   sensor::Sensor *energy_sensor_ = nullptr;
   sensor::Sensor *power_sensor_ = nullptr;
