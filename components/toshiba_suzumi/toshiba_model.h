@@ -7,17 +7,36 @@
 namespace esphome {
 namespace toshiba_suzumi {
 
-/**
- * Indoor-unit families currently needed by the control-matrix redesign.
- *
- * These are derived from the IDU model field in the pushed 0xE0 equipment
- * identification message. Unknown models deliberately remain UNKNOWN so that
- * the component can fall back conservatively instead of inventing features.
- */
 enum class ToshibaIndoorUnitFamily : uint8_t {
   UNKNOWN = 0,
   J2FVG,
   G3KVSG,
+  P2KVSG,
+};
+
+enum ToshibaFeature : uint32_t {
+  FEATURE_NONE = 0,
+  FEATURE_COMMON_HVAC = 1UL << 0,
+  FEATURE_ECO = 1UL << 1,
+  FEATURE_HI_POWER = 1UL << 2,
+  FEATURE_COMFORT_SLEEP = 1UL << 3,
+  FEATURE_POWER_SELECT = 1UL << 4,
+  FEATURE_OUTDOOR_SILENT = 1UL << 5,
+  FEATURE_FIREPLACE = 1UL << 6,
+  FEATURE_EIGHT_DEG_HEAT = 1UL << 7,
+  FEATURE_VERTICAL_AIRFLOW = 1UL << 8,
+  FEATURE_HORIZONTAL_AIRFLOW = 1UL << 9,
+  FEATURE_FLOOR = 1UL << 10,
+  FEATURE_AIR_OUTLET_SELECT = 1UL << 11,
+  FEATURE_HADA_CARE = 1UL << 12,
+};
+
+struct ToshibaCapabilityProfile {
+  uint32_t features{FEATURE_NONE};
+
+  bool has(ToshibaFeature feature) const {
+    return (features & static_cast<uint32_t>(feature)) != 0;
+  }
 };
 
 struct ToshibaEquipmentIdentification {
@@ -27,28 +46,14 @@ struct ToshibaEquipmentIdentification {
   std::string idu_model;
   std::string odu_model;
   ToshibaIndoorUnitFamily idu_family{ToshibaIndoorUnitFamily::UNKNOWN};
+  ToshibaCapabilityProfile capabilities;
 };
 
-/**
- * Decode the pushed class-0x11 register-0xE0 equipment-identification packet.
- *
- * Working packet layout established from captures:
- *   byte 12      register (0xE0)
- *   bytes 13-28  IDU model field (16 ASCII bytes)
- *   bytes 29-36  IDU identifier field (8 bytes, meaning unresolved)
- *   bytes 37-44  IDU identifier field (8 bytes, meaning unresolved)
- *   bytes 45-50  IDU identifier field (6 bytes, meaning unresolved)
- *   bytes 51-66  ODU model field (16 ASCII bytes)
- *
- * Some IDUs have been observed to return "NULL" in the IDU model field. That
- * is treated as model unavailable, not as evidence that 0xE0 has a different
- * meaning. The ODU model must never be promoted to the IDU model when the first
- * field is unavailable.
- */
 ToshibaEquipmentIdentification decode_equipment_identification(const std::vector<uint8_t> &raw_data);
 
 ToshibaIndoorUnitFamily indoor_unit_family_from_model(const std::string &model);
 const char *indoor_unit_family_to_string(ToshibaIndoorUnitFamily family);
+ToshibaCapabilityProfile capability_profile_from_model(const std::string &model);
 
 }  // namespace toshiba_suzumi
 }  // namespace esphome
