@@ -183,14 +183,26 @@ void ToshibaDiagnosticMonitorUart::log_monitor_decoded_(const std::vector<uint8_
   if (equipment.idu_model_available) {
     ESP_LOGI(TAG, "E0 IDU model: %s", equipment.idu_model.c_str());
     ESP_LOGI(TAG, "E0 IDU family: %s", indoor_unit_family_to_string(equipment.idu_family));
+    if (this->idu_model_sensor_ != nullptr) {
+      this->idu_model_sensor_->publish_state(equipment.idu_model);
+    }
   } else {
     ESP_LOGI(TAG, "E0 IDU model: unavailable (NULL/blank in IDU model field)");
+    if (this->idu_model_sensor_ != nullptr) {
+      this->idu_model_sensor_->publish_state("Unavailable");
+    }
   }
 
   if (equipment.odu_model_available) {
     ESP_LOGI(TAG, "E0 ODU model: %s", equipment.odu_model.c_str());
+    if (this->odu_model_sensor_ != nullptr) {
+      this->odu_model_sensor_->publish_state(equipment.odu_model);
+    }
   } else {
     ESP_LOGI(TAG, "E0 ODU model: unavailable");
+    if (this->odu_model_sensor_ != nullptr) {
+      this->odu_model_sensor_->publish_state("Unavailable");
+    }
   }
 }
 
