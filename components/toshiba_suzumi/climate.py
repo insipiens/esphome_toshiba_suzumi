@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import binary_sensor, sensor, climate, uart, select
+from esphome.components import binary_sensor, sensor, climate, uart, select, text_sensor
 from esphome.const import (
     CONF_ID,
     STATE_CLASS_MEASUREMENT,
@@ -22,7 +22,7 @@ import logging
 _LOGGER = logging.getLogger(__name__)
 
 DEPENDENCIES = ["uart"]
-AUTO_LOAD = ["binary_sensor", "sensor", "select"]
+AUTO_LOAD = ["binary_sensor", "sensor", "select", "text_sensor"]
 
 CONF_ROOM_TEMP = "room_temp"
 CONF_INDOOR_TEMP = "indoor_temp"
@@ -35,6 +35,8 @@ CONF_COMPRESSOR_CURRENT = "compressor_current"
 CONF_IDU_HEAT_EXCHANGER_TEMP = "idu_heat_exchanger_temp"
 CONF_IDU_JUNCTION_TEMP = "idu_junction_temp"
 CONF_IDU_FAN_SPEED = "idu_fan_speed"
+CONF_IDU_MODEL = "idu_model"
+CONF_ODU_MODEL = "odu_model"
 CONF_PWR_SELECT = "power_select"
 CONF_VERTICAL_AIR_DIRECTION = "vertical_air_direction"
 CONF_SPECIAL_MODE = "special_mode" # deprecated - replaced by CONF_SUPPORTED_PRESETS
@@ -115,6 +117,8 @@ CONFIG_SCHEMA = climate.climate_schema(ToshibaClimateUart).extend(
                 accuracy_decimals=0,
                 state_class=STATE_CLASS_MEASUREMENT,
             ),
+        cv.Optional(CONF_IDU_MODEL): text_sensor.text_sensor_schema(),
+        cv.Optional(CONF_ODU_MODEL): text_sensor.text_sensor_schema(),
         cv.Optional(CONF_PWR_SELECT): select.select_schema(ToshibaPwrModeSelect).extend({
             cv.GenerateID(): cv.declare_id(ToshibaPwrModeSelect),
         }),
@@ -127,8 +131,6 @@ CONFIG_SCHEMA = climate.climate_schema(ToshibaClimateUart).extend(
         cv.Optional(FEATURE_HORIZONTAL_SWING): cv.boolean,
         cv.Optional(DISABLE_WIFI_LED): cv.boolean,
         cv.Optional(DISABLE_HEAT_MODE): cv.boolean,
-        # CONF_SPECIAL_MODE is deprecated - replaced by CONF_SUPPORTED_PRESETS
-        # Keep it for backward compatibility
         cv.Optional(CONF_SPECIAL_MODE): select.select_schema(ToshibaSpecialModeSelect).extend({
             cv.GenerateID(): cv.declare_id(ToshibaSpecialModeSelect),
             cv.Required(CONF_SPECIAL_MODE_MODES): cv.ensure_list(cv.one_of("Standard","Hi POWER","ECO","Fireplace 1","Fireplace 2","8 degrees","Silent#1","Silent#2","Sleep","Floor","Comfort"))
@@ -194,6 +196,14 @@ async def to_code(config):
         sens = await sensor.new_sensor(config[CONF_IDU_FAN_SPEED])
         cg.add(var.set_idu_fan_speed_sensor(sens))
 
+    if CONF_IDU_MODEL in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_IDU_MODEL])
+        cg.add(var.set_idu_model_sensor(sens))
+
+    if CONF_ODU_MODEL in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_ODU_MODEL])
+        cg.add(var.set_odu_model_sensor(sens))
+
     if CONF_PWR_SELECT in config:
         sel = await select.new_select(config[CONF_PWR_SELECT], options=['50 %', '75 %', '100 %'])
         await cg.register_parented(sel, config[CONF_ID])
@@ -223,16 +233,12 @@ async def to_code(config):
         presets = config[CONF_SUPPORTED_PRESETS]
         cg.add(var.set_supported_presets(presets))
         if "8 degrees" in presets:
-            # if "8 degrees" feature is in the list, set the min visual temperature to 5
             cg.add(var.set_min_temp(5))
 
-    # CONF_SPECIAL_MODE is deprecated - replaced by CONF_SUPPORTED_PRESETS
-    # Keep it for backward compatibility
     if CONF_SPECIAL_MODE in config:
         presets = config[CONF_SPECIAL_MODE][CONF_SPECIAL_MODE_MODES]
         cg.add(var.set_supported_presets(presets))
         if "8 degrees" in presets:
-            # if "8 degrees" feature is in the list, set the min visual temperature to 5
             cg.add(var.set_min_temp(5))
 
     if CONF_TIME_ID in config:
