@@ -8,8 +8,10 @@
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/select/select.h"
+#include "esphome/components/switch/switch.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "toshiba_climate_mode.h"
+#include "toshiba_model.h"
 
 namespace esphome {
 namespace time {
@@ -42,6 +44,9 @@ struct ToshibaCommand {
   int delay;
 };
 
+class ToshibaSpecialModeSwitch;
+class ToshibaSpecialModeLevelSelect;
+
 class ToshibaClimateUart : public PollingComponent, public climate::Climate, public uart::UARTDevice {
  public:
   ToshibaClimateUart();
@@ -52,16 +57,14 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   void update() override;
   virtual void scan();
   virtual void set_scan_enabled(bool enabled) {
-    if (enabled) {
-      this->scan();
-    }
+    if (enabled) this->scan();
   }
   virtual bool is_scan_enabled() const { return this->scan_active_; }
   void set_wifi_led(bool enabled);
   float get_setup_priority() const override { return setup_priority::LATE; }
 
-  void set_indoor_temp_sensor(sensor::Sensor *indoor_temp_sensor) { indoor_temp_sensor_ = indoor_temp_sensor; }
-  void set_outdoor_temp_sensor(sensor::Sensor *outdoor_temp_sensor) { outdoor_temp_sensor_ = outdoor_temp_sensor; }
+  void set_indoor_temp_sensor(sensor::Sensor *sensor) { indoor_temp_sensor_ = sensor; }
+  void set_outdoor_temp_sensor(sensor::Sensor *sensor) { outdoor_temp_sensor_ = sensor; }
   void set_odu_discharge_temp_sensor(sensor::Sensor *sensor) { odu_discharge_temp_sensor_ = sensor; }
   void set_odu_suction_temp_sensor(sensor::Sensor *sensor) { odu_suction_temp_sensor_ = sensor; }
   void set_odu_heat_exchanger_temp_sensor(sensor::Sensor *sensor) { odu_heat_exchanger_temp_sensor_ = sensor; }
@@ -76,16 +79,23 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   void set_energy_sensor(sensor::Sensor *sensor) { energy_sensor_ = sensor; }
   void set_power_sensor(sensor::Sensor *sensor) { power_sensor_ = sensor; }
   void set_pwr_select(select::Select *pws_select) { pwr_select_ = pws_select; }
-  void set_vertical_air_direction_select(select::Select *vertical_air_direction_select) {
-    vertical_air_direction_select_ = vertical_air_direction_select;
-  }
-  void set_self_clean_sensor(binary_sensor::BinarySensor *self_clean_sensor) { self_clean_sensor_ = self_clean_sensor; }
+  void set_vertical_air_direction_select(select::Select *sel) { vertical_air_direction_select_ = sel; }
+  void set_self_clean_sensor(binary_sensor::BinarySensor *sensor) { self_clean_sensor_ = sensor; }
   void set_horizontal_swing(bool enabled) { horizontal_swing_ = enabled; }
   void disable_heat_mode(bool disabled) { heat_mode_disabled_ = disabled; }
   void disable_wifi_led(bool disabled) { wifi_led_disabled_ = disabled; }
   void set_supported_presets(const std::vector<const char *> &presets) { supported_presets_ = presets; }
   void set_min_temp(uint8_t min_temp) { min_temp_ = min_temp; }
   void set_time_sync_interval(uint32_t interval) { time_sync_interval_ = interval; }
+
+  void set_eco_switch(ToshibaSpecialModeSwitch *entity) { eco_switch_ = entity; }
+  void set_hi_power_switch(ToshibaSpecialModeSwitch *entity) { hi_power_switch_ = entity; }
+  void set_eight_degree_heat_switch(ToshibaSpecialModeSwitch *entity) { eight_degree_heat_switch_ = entity; }
+  void set_sleep_switch(ToshibaSpecialModeSwitch *entity) { sleep_switch_ = entity; }
+  void set_floor_switch(ToshibaSpecialModeSwitch *entity) { floor_switch_ = entity; }
+  void set_comfort_switch(ToshibaSpecialModeSwitch *entity) { comfort_switch_ = entity; }
+  void set_fireplace_select(ToshibaSpecialModeLevelSelect *entity) { fireplace_select_ = entity; }
+  void set_outdoor_silent_select(ToshibaSpecialModeLevelSelect *entity) { outdoor_silent_select_ = entity; }
 
  protected:
   void control(const climate::ClimateCall &call) override;
@@ -116,6 +126,21 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   time::RealTimeClock *time_ = nullptr;
   sensor::Sensor *energy_sensor_ = nullptr;
   sensor::Sensor *power_sensor_ = nullptr;
+
+  ToshibaIndoorUnitFamily idu_family_{ToshibaIndoorUnitFamily::UNKNOWN};
+  ToshibaCapabilityProfile capabilities_{};
+  std::string idu_model_;
+  std::string odu_model_;
+
+  ToshibaSpecialModeSwitch *eco_switch_ = nullptr;
+  ToshibaSpecialModeSwitch *hi_power_switch_ = nullptr;
+  ToshibaSpecialModeSwitch *eight_degree_heat_switch_ = nullptr;
+  ToshibaSpecialModeSwitch *sleep_switch_ = nullptr;
+  ToshibaSpecialModeSwitch *floor_switch_ = nullptr;
+  ToshibaSpecialModeSwitch *comfort_switch_ = nullptr;
+  ToshibaSpecialModeLevelSelect *fireplace_select_ = nullptr;
+  ToshibaSpecialModeLevelSelect *outdoor_silent_select_ = nullptr;
+
   bool horizontal_swing_ = false;
   uint8_t min_temp_ = 17;
   bool heat_mode_disabled_ = false;
@@ -155,6 +180,14 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   void on_set_vertical_air_direction(const std::string &value);
   void publish_vertical_air_direction_(SWING swing_mode);
   void configure_supported_custom_modes_();
+
+  void on_set_special_mode_switch(SPECIAL_MODE mode, bool enabled);
+  void on_set_special_mode_level(SPECIAL_MODE level_one, SPECIAL_MODE level_two,
+                                 const std::string &option_one, const std::string &option_two,
+                                 const std::string &value);
+  void publish_special_mode_entities_(SPECIAL_MODE mode);
+  void set_detected_equipment_(const ToshibaEquipmentIdentification &equipment);
+
   virtual void process_scan_();
   void send_scan_request_();
   void complete_scan_register_();
@@ -171,6 +204,8 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
 
   friend class ToshibaPwrModeSelect;
   friend class ToshibaVerticalAirDirectionSelect;
+  friend class ToshibaSpecialModeSwitch;
+  friend class ToshibaSpecialModeLevelSelect;
 };
 
 class ToshibaDiagnosticMonitorUart : public ToshibaClimateUart {
@@ -210,12 +245,41 @@ class ToshibaDiagnosticMonitorUart : public ToshibaClimateUart {
 
 class ToshibaPwrModeSelect : public select::Select, public esphome::Parented<ToshibaClimateUart> {
  protected:
-  virtual void control(const std::string &value) override;
+  void control(const std::string &value) override;
 };
 
 class ToshibaVerticalAirDirectionSelect : public select::Select, public esphome::Parented<ToshibaClimateUart> {
  protected:
-  virtual void control(const std::string &value) override;
+  void control(const std::string &value) override;
+};
+
+class ToshibaSpecialModeSwitch : public switch_::Switch, public esphome::Parented<ToshibaClimateUart> {
+ public:
+  void set_special_mode(uint8_t mode) { mode_ = static_cast<SPECIAL_MODE>(mode); }
+  SPECIAL_MODE special_mode() const { return mode_; }
+
+ protected:
+  void write_state(bool state) override;
+  SPECIAL_MODE mode_{SPECIAL_MODE::STANDARD};
+};
+
+class ToshibaSpecialModeLevelSelect : public select::Select, public esphome::Parented<ToshibaClimateUart> {
+ public:
+  void set_special_modes(uint8_t level_one, uint8_t level_two) {
+    level_one_ = static_cast<SPECIAL_MODE>(level_one);
+    level_two_ = static_cast<SPECIAL_MODE>(level_two);
+  }
+  void set_option_names(const std::string &option_one, const std::string &option_two) {
+    option_one_ = option_one;
+    option_two_ = option_two;
+  }
+
+ protected:
+  void control(const std::string &value) override;
+  SPECIAL_MODE level_one_{SPECIAL_MODE::STANDARD};
+  SPECIAL_MODE level_two_{SPECIAL_MODE::STANDARD};
+  std::string option_one_;
+  std::string option_two_;
 };
 
 }  // namespace toshiba_suzumi
