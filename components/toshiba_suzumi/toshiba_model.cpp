@@ -35,7 +35,9 @@ constexpr uint32_t COMMON_RESIDENTIAL_FEATURES =
     FEATURE_OUTDOOR_SILENT |
     FEATURE_FIREPLACE |
     FEATURE_EIGHT_DEG_HEAT |
-    FEATURE_VERTICAL_AIRFLOW;
+    FEATURE_VERTICAL_AIRFLOW |
+    FEATURE_SLEEP |
+    FEATURE_COMFORT;
 
 }  // namespace
 
@@ -59,8 +61,8 @@ ToshibaCapabilityProfile capability_profile_from_model(const std::string &model)
   ToshibaCapabilityProfile profile;
   const auto family = indoor_unit_family_from_model(model);
 
-  // Start from the shared residential control vocabulary seen across Toshiba
-  // wall and console families, then layer only family-specific additions.
+  // Shared controls are modelled once. Family mappings only add controls that
+  // are physically specific to that indoor-unit construction/remote family.
   switch (family) {
     case ToshibaIndoorUnitFamily::J2FVG:
       profile.features = COMMON_RESIDENTIAL_FEATURES |
@@ -77,8 +79,6 @@ ToshibaCapabilityProfile capability_profile_from_model(const std::string &model)
                          FEATURE_HORIZONTAL_AIRFLOW;
       break;
     default:
-      // Unknown models remain conservative. E0 still identifies the exact model,
-      // but no manufacturer-specific feature is inferred until mapped.
       profile.features = FEATURE_COMMON_HVAC;
       break;
   }
