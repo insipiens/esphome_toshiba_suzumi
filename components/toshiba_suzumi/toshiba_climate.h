@@ -143,7 +143,7 @@ class ToshibaClimateUart : public PollingComponent, public climate::Climate, pub
   void enqueue_command_(const ToshibaCommand &command);
   void send_to_uart(const ToshibaCommand command);
   void start_handshake();
-  void parseResponse(std::vector<uint8_t> rawData);
+  virtual void parseResponse(std::vector<uint8_t> rawData);
   void requestData(ToshibaCommandType cmd);
   void process_command_queue_();
   void sendCmd(ToshibaCommandType cmd, uint8_t value);
@@ -180,6 +180,7 @@ class ToshibaDiagnosticMonitorUart : public ToshibaClimateUart {
   bool is_scan_enabled() const override { return this->scan_active_ && !this->monitor_stop_requested_; }
 
  protected:
+  void parseResponse(std::vector<uint8_t> raw_data) override;
   void process_scan_() override;
   void log_scan_packet_(const std::vector<uint8_t> &raw_data) override;
 
