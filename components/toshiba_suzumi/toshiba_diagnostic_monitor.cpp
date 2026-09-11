@@ -1,5 +1,6 @@
 #include <algorithm>
 #include "toshiba_climate.h"
+#include "toshiba_model.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
@@ -131,8 +132,15 @@ void ToshibaDiagnosticMonitorUart::log_scan_packet_(const std::vector<uint8_t> &
   this->log_monitor_bytes_(raw, reg);
   this->log_monitor_decoded_(raw, reg);
 
-  // The monitor is observational only. Always preserve normal component
-  // behaviour by passing every captured frame to the existing parser.
+  // E0 is a pushed equipment-identification publication rather than a normal
+  // scalar/status response. It is decoded by the monitor above; the legacy
+  // parser does not yet have an E0 case and would only report it as unknown.
+  if (reg == static_cast<int16_t>(ToshibaCommandType::EQUIPMENT_INFO)) {
+    return;
+  }
+
+  // The monitor is observational only. Preserve normal component behaviour by
+  // passing all other captured frames to the existing parser.
   this->parseResponse(raw);
 }
 
@@ -160,6 +168,29 @@ void ToshibaDiagnosticMonitorUart::log_monitor_decoded_(const std::vector<uint8_
   std::vector<uint8_t> payload;
   if (this->extract_monitor_payload_(raw, reg, payload)) {
     this->remember_monitor_payload_(static_cast<uint8_t>(reg), payload);
+  }
+
+  if (reg != static_cast<int16_t>(ToshibaCommandType::EQUIPMENT_INFO)) {
+    return;
+  }
+
+  const auto equipment = decode_equipment_identification(raw);
+  if (!equipment.valid) {
+    ESP_LOGW(TAG, "E0 equipment-identification packet did not match the expected class-0x11 layout");
+    return;
+  }
+
+  if (equipment.idu_model_available) {
+    ESP_LOGI(TAG, "E0 IDU model: %s", equipment.idu_model.c_str());
+    ESP_LOGI(TAG, "E0 IDU family: %s", indoor_unit_family_to_string(equipment.idu_family));
+  } else {
+    ESP_LOGI(TAG, "E0 IDU model: unavailable (NULL/blank in IDU model field)");
+  }
+
+  if (equipment.odu_model_available) {
+    ESP_LOGI(TAG, "E0 ODU model: %s", equipment.odu_model.c_str());
+  } else {
+    ESP_LOGI(TAG, "E0 ODU model: unavailable");
   }
 }
 
