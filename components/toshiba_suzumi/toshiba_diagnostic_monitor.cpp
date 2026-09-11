@@ -1,5 +1,6 @@
 #include <algorithm>
 #include "toshiba_climate.h"
+#include "toshiba_model.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 
@@ -7,6 +8,45 @@ namespace esphome {
 namespace toshiba_suzumi {
 
 static constexpr size_t CHUNK = 24;
+
+void ToshibaDiagnosticMonitorUart::parseResponse(std::vector<uint8_t> raw) {
+  if (raw.size() > 12 && raw[3] == 0x11 &&
+      raw[12] == static_cast<uint8_t>(ToshibaCommandType::EQUIPMENT_INFO)) {
+    const auto equipment = decode_equipment_identification(raw);
+    if (!equipment.valid) {
+      ESP_LOGW(TAG, "E0 equipment-identification packet did not match the expected class-0x11 layout");
+      return;
+    }
+
+    if (equipment.idu_model_available) {
+      ESP_LOGI(TAG, "E0 IDU model: %s", equipment.idu_model.c_str());
+      ESP_LOGI(TAG, "E0 IDU family: %s", indoor_unit_family_to_string(equipment.idu_family));
+      if (this->idu_model_sensor_ != nullptr) {
+        this->idu_model_sensor_->publish_state(equipment.idu_model);
+      }
+    } else {
+      ESP_LOGI(TAG, "E0 IDU model: unavailable (NULL/blank in IDU model field)");
+      if (this->idu_model_sensor_ != nullptr) {
+        this->idu_model_sensor_->publish_state("Unavailable");
+      }
+    }
+
+    if (equipment.odu_model_available) {
+      ESP_LOGI(TAG, "E0 ODU model: %s", equipment.odu_model.c_str());
+      if (this->odu_model_sensor_ != nullptr) {
+        this->odu_model_sensor_->publish_state(equipment.odu_model);
+      }
+    } else {
+      ESP_LOGI(TAG, "E0 ODU model: unavailable");
+      if (this->odu_model_sensor_ != nullptr) {
+        this->odu_model_sensor_->publish_state("Unavailable");
+      }
+    }
+    return;
+  }
+
+  ToshibaClimateUart::parseResponse(std::move(raw));
+}
 
 void ToshibaDiagnosticMonitorUart::set_scan_enabled(bool enabled) {
   if (enabled) {
@@ -131,8 +171,8 @@ void ToshibaDiagnosticMonitorUart::log_scan_packet_(const std::vector<uint8_t> &
   this->log_monitor_bytes_(raw, reg);
   this->log_monitor_decoded_(raw, reg);
 
-  // The monitor is observational only. Always preserve normal component
-  // behaviour by passing every captured frame to the existing parser.
+  // The monitor remains observational only. Every captured frame, including
+  // E0 equipment identity, goes through the same normal parser path.
   this->parseResponse(raw);
 }
 
